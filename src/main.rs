@@ -1,7 +1,7 @@
 mod geojson;
-mod mask;
 mod features;
 pub mod consts;
+mod utils;
 
 use std::{path::PathBuf, fs::File, io::BufReader};
 
@@ -71,22 +71,8 @@ fn main() {
             [point[0] - centroid.0, point[1] - centroid.1]
         }).collect::<Vec<_>>();
 
-
-        let mask = mask::poly2mask((PATCH_SIZE, PATCH_SIZE), &centered_poly);
-        let mask = Tensor::of_slice(&mask).view((1, 1, PATCH_SIZE as i64, PATCH_SIZE as i64)).to_kind(Kind::Float)/256.0;
-        if f64::from(mask.sum(Kind::Float)) < 0.0001 {
-            println!("Empty mask");
-            return (centroid, features::Features{
-                area: 0.0,
-                major_axis: 0.0,
-                minor_axis: 0.0,
-                eccentricity: 0.0,
-                orientation: 0.0
-            });
-        }
-
-        let features = features::all_features(&centered_poly, &mask);
-
+        let features = features::all_features(&centered_poly, &Tensor::of_slice(&[0.0]));
+        
         (centroid, features)
     }).collect::<Vec<_>>();
 
