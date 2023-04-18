@@ -9,9 +9,7 @@ use clap::Parser;
 use csv::WriterBuilder;
 use openslide::OpenSlide;
 use rayon::prelude::*;
-use tch::{Tensor, index::*, Kind};
-
-use crate::consts::PATCH_SIZE;
+use tch::Tensor;
 
 #[derive(Debug, Parser)]
 struct Args{
@@ -71,7 +69,7 @@ fn main() {
             [point[0] - centroid.0, point[1] - centroid.1]
         }).collect::<Vec<_>>();
 
-        let features = features::all_features(&centered_poly, &Tensor::of_slice(&[0.0]));
+        let features = features::shape_features(&centered_poly, &Tensor::of_slice(&[0.0]));
         
         (centroid, features)
     }).collect::<Vec<_>>();
