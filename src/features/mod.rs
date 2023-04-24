@@ -65,8 +65,7 @@ Added metrics to Medhi's features:
     - convex negative deffect
     - perimeter
     - convex perimeter
-- color
-    
+
  */
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct Features {
@@ -86,6 +85,24 @@ pub(crate) struct Features {
     pub(crate) convex_perimeter: f32,
     pub(crate) compacity: f32,
     // Color features
+    pub(crate) mean_r: f32,
+    pub(crate) mean_g: f32,
+    pub(crate) mean_b: f32,
+    pub(crate) std_r: f32,
+    pub(crate) std_g: f32,
+    pub(crate) std_b: f32,
+    pub(crate) mean_h: f32,
+    pub(crate) mean_s: f32,
+    pub(crate) mean_v: f32,
+    pub(crate) std_h: f32,
+    pub(crate) std_s: f32,
+    pub(crate) std_v: f32,
+    pub(crate) mean_hematoxylin: f32,
+    pub(crate) mean_eosine: f32,
+    pub(crate) mean_dab: f32,
+    pub(crate) std_hematoxykin : f32,
+    pub(crate) std_eosine: f32,
+    pub(crate) std_dab: f32, 
 }
 
 pub(crate) fn all_features(polygon: &Vec<[f32; 2]>, patch: &Tensor) -> Features {
@@ -109,6 +126,27 @@ pub(crate) fn all_features(polygon: &Vec<[f32; 2]>, patch: &Tensor) -> Features 
         compacity,
     } = shape_features(polygon, &mask);
 
+    let ColorFeatures{
+        mean_r,
+        mean_g,
+        mean_b,
+        std_r,
+        std_g,
+        std_b,
+        mean_h,
+        mean_s,
+        mean_v,
+        std_h,
+        std_s,
+        std_v,
+        mean_hematoxylin,
+        mean_eosine,
+        mean_dab,
+        std_hematoxykin,
+        std_eosine,
+        std_dab,
+    } = color_features(patch, &mask);
+
     Features {
         area,
         perimeter,
@@ -124,6 +162,24 @@ pub(crate) fn all_features(polygon: &Vec<[f32; 2]>, patch: &Tensor) -> Features 
         convex_negative_defect,
         convex_perimeter,
         compacity,
+        mean_r,
+        mean_g,
+        mean_b,
+        std_r,
+        std_g,
+        std_b,
+        mean_h,
+        mean_s,
+        mean_v,
+        std_h,
+        std_s,
+        std_v,
+        mean_hematoxylin,
+        mean_eosine,
+        mean_dab,
+        std_hematoxykin,
+        std_eosine,
+        std_dab,
     }
 }
 
@@ -179,8 +235,13 @@ pub fn color_features(patch:&Tensor, mask: &Tensor) -> ColorFeatures{
     let hed = tch_utils::color::hed_from_rgb(patch);
 
     let ((mean_r, mean_g, mean_b), (std_r, std_g, std_b)) = mean_std(patch, mask);
-    let ((mean_h, mean_s, mean_v), (std_h, std_s, std_v)) = mean_std(&hsv, mask);
+    let ((_, mean_s, mean_v), (std_h, std_s, std_v)) = mean_std(&hsv, mask);
     let ((mean_hematoxylin, mean_eosine, mean_dab), (std_hematoxykin, std_eosine, std_dab)) = mean_std(&hed, mask);
+
+    let h = hsv.select(-3, 0);
+    let c = f64::from(h.cos().mean(Kind::Float));
+    let s = f64::from(h.sin().mean(Kind::Float));
+    let mean_h = c.atan2(s);
 
     ColorFeatures {
         mean_r,
