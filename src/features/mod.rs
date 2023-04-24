@@ -241,7 +241,7 @@ pub fn color_features(patch:&Tensor, mask: &Tensor) -> ColorFeatures{
     let h = hsv.select(-3, 0);
     let c = f64::from(h.cos().mean(Kind::Float));
     let s = f64::from(h.sin().mean(Kind::Float));
-    let mean_h = c.atan2(s);
+    let mean_h = c.atan2(s) as f32;
 
     ColorFeatures {
         mean_r,
