@@ -1,5 +1,6 @@
 mod shape;
 mod color;
+mod texture;
 
 use tch::{Kind, Tensor};
 
