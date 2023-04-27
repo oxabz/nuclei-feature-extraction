@@ -2,6 +2,9 @@ mod shape;
 mod color;
 mod texture;
 
+use std::io;
+
+use struct_field_names_as_array::FieldNamesAsArray;
 use tch::{Kind, Tensor};
 
 use crate::{consts::PATCH_SIZE, utils::PointsExt};
@@ -68,8 +71,11 @@ Added metrics to Medhi's features:
     - convex perimeter
 
  */
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, FieldNamesAsArray)]
 pub(crate) struct Features {
+    // centroid 
+    pub(crate) centroid_x: f32,
+    pub(crate) centroid_y: f32,
     // Shape features
     pub(crate) area: f32,
     pub(crate) perimeter: f32,
@@ -157,13 +163,18 @@ pub(crate) struct Features {
     pub glcm135_difference_variance: f32,
     pub glcm135_information_measure_correlation1: f32,
     pub glcm135_information_measure_correlation2: f32,
-    
+}
+
+impl Features {
+    pub(crate) fn write_header_to_csv<W: io::Write>( wtr:&mut csv::Writer<W>){
+        wtr.write_record(Features::FIELD_NAMES_AS_ARRAY).unwrap();
+    }
 }
 
 pub(crate) fn all_features(polygon: &Vec<[f32; 2]>, patch: &Tensor) -> Features {
     let device = patch.device();
     let mask = tch_utils::shapes::polygon(PATCH_SIZE, PATCH_SIZE, &polygon.to_tchutils_points(), (Kind::Float, device));
-
+    
     let ShapeFeatures {
         area,
         perimeter,
@@ -201,7 +212,7 @@ pub(crate) fn all_features(polygon: &Vec<[f32; 2]>, patch: &Tensor) -> Features 
         std_eosine,
         std_dab,
     } = color_features(patch, &mask);
-
+    
     let glcms = glcm_features(patch, &mask);
 
     let GlcmFeatures{
@@ -353,6 +364,8 @@ pub(crate) fn all_features(polygon: &Vec<[f32; 2]>, patch: &Tensor) -> Features 
         glcm135_difference_variance,
         glcm135_information_measure_correlation1,
         glcm135_information_measure_correlation2,
+        centroid_x: 0.0,
+        centroid_y: 0.0,
     }
 }
 
@@ -404,18 +417,19 @@ pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFea
 }
 
 pub fn color_features(patch:&Tensor, mask: &Tensor) -> ColorFeatures{
-    let hsv = tch_utils::color::hsv_from_rgb(patch);
-    let hed = tch_utils::color::hed_from_rgb(patch);
-
+    let hsv = tch_utils::color::hsv_from_rgb(&patch.unsqueeze(0)).squeeze();
+    let hed = tch_utils::color::hed_from_rgb(&patch.unsqueeze(0)).squeeze();
     let ((mean_r, mean_g, mean_b), (std_r, std_g, std_b)) = mean_std(patch, mask);
     let ((_, mean_s, mean_v), (std_h, std_s, std_v)) = mean_std(&hsv, mask);
     let ((mean_hematoxylin, mean_eosine, mean_dab), (std_hematoxykin, std_eosine, std_dab)) = mean_std(&hed, mask);
 
+    // TODO mask is not used
     let h = hsv.select(-3, 0);
     let c = f64::from(h.cos().mean(Kind::Float));
     let s = f64::from(h.sin().mean(Kind::Float));
     let mean_h = c.atan2(s) as f32;
 
+    
     ColorFeatures {
         mean_r,
         mean_g,

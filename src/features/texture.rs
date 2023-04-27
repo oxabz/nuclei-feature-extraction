@@ -1,7 +1,7 @@
 use tch::{Tensor, Kind, index::*};
 use tch_utils::{glcm::glcm, glrlm::glrlm};
 
-const GLCM_LEVELS: u8 = 254;
+const GLCM_LEVELS: u8 = 64;
 
 pub struct GlcmFeatures{
     pub correlation: f32,
@@ -26,7 +26,6 @@ pub fn glcm_features(image:&Tensor, mask:&Tensor)->Vec<GlcmFeatures>{
     let glcms = OFFSETS.iter()
         .map(|offset|glcm(&gs, *offset, GLCM_LEVELS, Some(mask)).squeeze())
         .collect::<Vec<_>>(); // [LEVEL, LEVEL] * 4
-    
     let mut features = Vec::with_capacity(glcms.len());
 
     for glcm in glcms.iter() {
@@ -78,8 +77,8 @@ pub fn glcm_features(image:&Tensor, mask:&Tensor)->Vec<GlcmFeatures>{
         let correlation = f32::from(correlation);
 
         let (contraste, dissimilarity) = {
-            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(1).repeat(&[GLCM_LEVELS as i64,1]);
-            let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(0).repeat(&[1,GLCM_LEVELS as i64]);
+            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(1).repeat(&[1,GLCM_LEVELS as i64]);
+            let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(0).repeat(&[GLCM_LEVELS as i64,1]);
             let imj = &i * (&i - &j).square();
             let contrast = (glcm * imj).sum(Kind::Float);
             let imj = (i - j).abs();
@@ -109,14 +108,14 @@ pub fn glcm_features(image:&Tensor, mask:&Tensor)->Vec<GlcmFeatures>{
         };
 
         let sum_of_squares = {
-            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(1).repeat(&[GLCM_LEVELS as i64, 1]);
+            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(1).repeat(&[1, GLCM_LEVELS as i64]);
             let var = (i - &intensity_x).square() * glcm;
             f32::from(var.sum(Kind::Float))
         };
 
         let inverse_difference_moment = {
-            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(1).repeat(&[GLCM_LEVELS as i64, 1]);
-            let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(0).repeat(&[1, GLCM_LEVELS as i64]);
+            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(1).repeat(&[1, GLCM_LEVELS as i64]);
+            let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(0).repeat(&[GLCM_LEVELS as i64, 1]);
             let imj = (i - j).square();
             let idm = glcm / (imj + 1.0);
             f32::from(idm.sum(Kind::Float))

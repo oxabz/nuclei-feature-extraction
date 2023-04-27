@@ -3,13 +3,19 @@ mod features;
 pub mod consts;
 mod utils;
 
-use std::{path::PathBuf, fs::File, io::BufReader};
+use std::{path::PathBuf, fs::File, io::BufReader, sync::{Arc, RwLock, Mutex, atomic::{AtomicU32, Ordering}}, marker::PhantomData, vec::IntoIter};
 
 use clap::Parser;
 use csv::WriterBuilder;
+use image::DynamicImage;
+use lazy_static::*;
+//use itertools::Itertools;
 use openslide::OpenSlide;
-use rayon::prelude::*;
-use tch::Tensor;
+use rayon::{prelude::*};
+use tch::{Tensor, index::*};
+use tch_utils::image::ImageTensorExt;
+
+use crate::{consts::PATCH_SIZE, utils::IntoParBridgeBridge, geojson::Feature, features::Features};
 
 #[derive(Debug, Parser)]
 struct Args{
@@ -27,7 +33,9 @@ impl std::fmt::Display for Args{
     }
 }
 
-
+lazy_static! {
+    static ref SLIDE: Mutex<Option<OpenSlide>> = Mutex::new(None);
+}
 
 fn main() {
     let args = Args::parse();
@@ -56,68 +64,68 @@ fn main() {
         },
     };
 
-    let res = geojson.features.par_iter().map(|feature|{
-        let poly = feature.geometry.coordinates[0].clone();
-        let mut centroid = (0.0, 0.0);
-        for point in &poly{
-            centroid.0 += point[0];
-            centroid.1 += point[1];
-        }
-        centroid.0 /= poly.len() as f32;
-        centroid.1 /= poly.len() as f32;
-        let centered_poly = poly.iter().map(|point|{
-            [point[0] - centroid.0, point[1] - centroid.1]
-        }).collect::<Vec<_>>();
+    {
+        let mut lck = SLIDE.lock().unwrap();
+        *lck = Some(slide);
+    };
 
-        let features = features::shape_features(&centered_poly, &Tensor::of_slice(&[0.0]));
-        
-        (centroid, features)
-    }).collect::<Vec<_>>();
+    let done = AtomicU32::new(0);
+    let count = geojson.features.len();
 
-    let mut writter = WriterBuilder::new()
-        .has_headers(true)
-        .from_path(args.output)
-        .unwrap();
-    writter.write_record(&["centroid_x", "centroid_y", "area", "major_axis", "minor_axis"]).expect("Couldn't write headers");
+    let features = geojson.features.into_par_iter()
+        .filter_map(move |feature|{
+            let poly = feature.geometry.coordinates[0].clone();
+            let mut centroid = (0.0, 0.0);
+            for point in &poly{
+                centroid.0 += point[0];
+                centroid.1 += point[1];
+            }
+            centroid.0 /= poly.len() as f32;
+            centroid.1 /= poly.len() as f32;
+            let centered_poly = poly.iter().map(|point|{
+                [point[0] - centroid.0, point[1] - centroid.1]
+            }).collect::<Vec<_>>();
 
-    for (centroid, features) in res{
-        writter.write_record(&[
-            centroid.0.to_string(),
-            centroid.1.to_string(),
-            features.area.to_string(),
-            features.major_axis.to_string(),
-            features.minor_axis.to_string(),
-        ]).expect("Couldn't write record");
+            let patch = {
+                let slide = SLIDE.lock().unwrap();
+                let top = centroid.1 - (PATCH_SIZE as f32 / 2.0);
+                let left = centroid.0 - (PATCH_SIZE as f32 / 2.0);
+                match &*slide{
+                    None => return None,
+                    Some(slide) =>{
+                        slide.read_region(top as usize, left as usize, 0, PATCH_SIZE, PATCH_SIZE)
+                    }
+                }  
+            };
+            let patch = match patch {
+                Ok(ok) => ok,
+                Err(err) => {
+                    eprintln!("{err}");
+                    return None;
+                },
+            };
+
+            Some((centroid, centered_poly, patch))
+        })
+        .map(|(centroid, centered_poly, patch)|{
+            let patch = Tensor::from_image(patch.into());
+            let patch = patch.to_device(tch::Device::cuda_if_available());
+            let patch = patch.i(0..3);
+
+            let features = features::all_features(&centered_poly, &patch);
+            let i = done.fetch_add(1, Ordering::Relaxed);
+            println!("\x1B[F{} / {}", i, count);
+
+            (centroid, features)
+        })
+        .collect::<Vec<_>>();
+
+    let mut writer = WriterBuilder::new().from_path(args.output).unwrap();
+    Features::write_header_to_csv(&mut writer);
+    for (centroid, mut features) in features{
+        features.centroid_x = centroid.0;
+        features.centroid_y = centroid.1;
+        writer.serialize(features).unwrap();
     }
-
-    // (0..100)
-    //     .into_par_iter()
-    //     .map(|i| {
-    //         let poly = geojson.features[i].geometry.coordinates[0].clone();
-    //         let mut centroid = (0.0, 0.0);
-    //         for point in &poly{
-    //             centroid.0 += point[0];
-    //             centroid.1 += point[1];
-    //         }
-    //         centroid.0 /= poly.len() as f32;
-    //         centroid.1 /= poly.len() as f32;
-
-    //         let centered_poly = poly.iter().map(|point|{
-    //             [point[0] - centroid.0, point[1] - centroid.1]
-    //         }).collect::<Vec<_>>();
-
-    //         let mask = mask::poly2mask((PATCH_SIZE, PATCH_SIZE), &centered_poly);
-    //         let mask = Tensor::of_slice(&mask).view((1, 1, PATCH_SIZE as i64, PATCH_SIZE as i64)).to_kind(Kind::Float);
-
-    //         let conv_hull = mask::poly2mask_convex((PATCH_SIZE, PATCH_SIZE), &centered_poly);
-    //         let conv_hull = Tensor::of_slice(&conv_hull).view((1, 1, PATCH_SIZE as i64, PATCH_SIZE as i64)).to_kind(Kind::Float);
-
-    //         let c = Tensor::cat(&[mask, conv_hull], 3);
-
-    //         tch::vision::image::save(&c, format!("masks/mask_{}.png", i)).expect("Couldn't save mask");
-
-
-    //     })
-    //     .collect::<Vec<_>>();
-
+    
 }
