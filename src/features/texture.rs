@@ -3,25 +3,25 @@ use tch_utils::{glcm::glcm, glrlm::glrlm};
 
 const GLCM_LEVELS: u8 = 254;
 
-struct GlcmFeatures{
-    correlation: f32,
-    contraste: f32,
-    dissimilarity: f32,
-    entropy: f32,
-    angular_second_moment: f32,
-    sum_average: f32,
-    sum_variance: f32,
-    sum_entropy: f32,
-    sum_of_squares: f32,
-    inverse_difference_moment: f32,
-    difference_variance: f32,
-    information_measure_correlation1: f32,
-    information_measure_correlation2: f32,
+pub struct GlcmFeatures{
+    pub correlation: f32,
+    pub contraste: f32,
+    pub dissimilarity: f32,
+    pub entropy: f32,
+    pub angular_second_moment: f32,
+    pub sum_average: f32,
+    pub sum_variance: f32,
+    pub sum_entropy: f32,
+    pub sum_of_squares: f32,
+    pub inverse_difference_moment: f32,
+    pub difference_variance: f32,
+    pub information_measure_correlation1: f32,
+    pub information_measure_correlation2: f32,
 }
 
 const OFFSETS: [(i64, i64);4] = [(0, 1), (1, 1), (1, 0), (1, -1)]; // 0, 45, 90, 135
 
-fn glcm_features(image:&Tensor, mask:&Tensor)->Vec<GlcmFeatures>{
+pub fn glcm_features(image:&Tensor, mask:&Tensor)->Vec<GlcmFeatures>{
     let gs = image.mean_dim(Some(&([-3][..])), true, Kind::Float).unsqueeze(0); // [1, 1, H, W]
     let glcms = OFFSETS.iter()
         .map(|offset|glcm(&gs, *offset, GLCM_LEVELS, Some(mask)).squeeze())
