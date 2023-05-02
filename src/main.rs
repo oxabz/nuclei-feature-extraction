@@ -1,131 +1,109 @@
+mod args;
 mod geojson;
-mod features;
-pub mod consts;
 mod utils;
+mod features;
+mod consts;
+use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::AtomicU32}, process::exit};
+use features::ShapeFeatures;
+use log::error;
+use object_pool::Pool;
+use args::{ARGS, Args};
+use rayon::prelude::*;
+use tch::{Kind, Device};
+use utils::{PointsExt};
 
-use std::{path::PathBuf, fs::File, io::BufReader, sync::{Arc, RwLock, Mutex, atomic::{AtomicU32, Ordering}}, marker::PhantomData, vec::IntoIter};
-
-use clap::Parser;
-use csv::WriterBuilder;
-use image::DynamicImage;
-use lazy_static::*;
-//use itertools::Itertools;
-use openslide::OpenSlide;
-use rayon::{prelude::*};
-use tch::{Tensor, index::*};
-use tch_utils::image::ImageTensorExt;
-
-use crate::{consts::PATCH_SIZE, utils::IntoParBridgeBridge, geojson::Feature, features::Features};
-
-#[derive(Debug, Parser)]
-struct Args{
-    /// Input GeoJSON file
-    input_geojson: PathBuf,
-    /// Input slide file
-    input_slide: PathBuf,
-    /// Output file (.csv)
-    output: PathBuf
+fn load_slide()-> Pool<openslide::OpenSlide> {
+    let pool = Pool::new(ARGS.openslide_instance_count, || {
+        let slide = openslide::OpenSlide::new(&ARGS.slide).unwrap();
+        slide
+    });
+    pool
 }
 
-impl std::fmt::Display for Args{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Args:\n\tinput_geojson: {:?}\n\tinput_slide: {:?}\n\toutput: {:?}", self.input_geojson, self.input_slide, self.output)
+fn load_geometry() -> geojson::FeatureCollection{
+    let geometry = File::open(&ARGS.geometry).unwrap();
+    let geometry = BufReader::new(geometry);
+    let geometry: geojson::FeatureCollection = serde_json::from_reader(geometry).unwrap();
+    geometry
+}
+
+fn main(){
+    // Preping the environment
+    ARGS.handle_verbose();
+    ARGS.validate_paths();
+    ARGS.validate_gpu();
+    ARGS.handle_thread_count();
+
+    // Loading the json file containing the geometry
+    let geometry = load_geometry();
+
+    // Loading the slide
+    let slide = load_slide();
+    let slide = Arc::new(slide);
+
+    match ARGS.feature_set {
+        args::FeatureSet::Geometry => geometry_main(geometry),
+        args::FeatureSet::Color => todo!(),
+        args::FeatureSet::Texture => todo!(),
     }
 }
 
-lazy_static! {
-    static ref SLIDE: Mutex<Option<OpenSlide>> = Mutex::new(None);
-}
+fn geometry_main(geometry: geojson::FeatureCollection){
+    let Args{
+        output,
+        patch_size,
+        ..
+    } = ARGS.clone();
+    let patch_size = patch_size as usize;
 
-fn main() {
-    let args = Args::parse();
-    println!("{}", args);
-    
-    let file = match File::open(args.input_geojson) {
-        Ok(ok) => BufReader::new(ok),
-        Err(err) => {
-            println!("Couldn't open files : {}", err);
-            std::process::exit(1);
-        },
-    };
-    let geojson: geojson::FeatureCollection = match serde_json::from_reader(file) {
-        Ok(ok) => {ok},
-        Err(err) => {
-            println!("Couldn't parse GeoJSON : {}", err);
-            std::process::exit(1);
-        },
-    };
+    let output = File::create(output).unwrap();
+    let output = BufWriter::new(output);
+    let mut output = csv::WriterBuilder::default()
+        .from_writer(output);
+    if let Err(err) = ShapeFeatures::write_header_to_csv(&mut output) {
+        error!("Error while writing to csv : {}", err);
+        exit(1);
+    }
+    let output = Arc::new(Mutex::new(output));
 
-    let slide = match OpenSlide::new(&args.input_slide) {
-        Ok(ok) => ok,
-        Err(err) => {
-            println!("Couldn't open slide : {}", err);
-            std::process::exit(1);
-        },
-    };
-
-    {
-        let mut lck = SLIDE.lock().unwrap();
-        *lck = Some(slide);
-    };
-
+    let count = geometry.features.len();
     let done = AtomicU32::new(0);
-    let count = geojson.features.len();
-
-    let features = geojson.features.into_par_iter()
-        .filter_map(move |feature|{
-            let poly = feature.geometry.coordinates[0].clone();
-            let mut centroid = (0.0, 0.0);
-            for point in &poly{
-                centroid.0 += point[0];
-                centroid.1 += point[1];
-            }
-            centroid.0 /= poly.len() as f32;
-            centroid.1 /= poly.len() as f32;
-            let centered_poly = poly.iter().map(|point|{
-                [point[0] - centroid.0, point[1] - centroid.1]
+    geometry.features.into_par_iter()
+        .map(|feature|{
+            let polynome = &feature.geometry.coordinates[0];
+            let centroid = polynome.iter().fold([0.0,0.0], |mut acc, point| {
+                acc[0] += point[0];
+                acc[1] += point[1];
+                acc
+            });
+            let centroid = [centroid[0] / polynome.len() as f32, centroid[1] / polynome.len() as f32];
+            let centered_polygone = polynome.iter().map(|point|{
+                let x = point[0] - centroid[0];
+                let y = point[1] - centroid[1];
+                [x,y]
             }).collect::<Vec<_>>();
-
-            let patch = {
-                let slide = SLIDE.lock().unwrap();
-                let top = centroid.1 - (PATCH_SIZE as f32 / 2.0);
-                let left = centroid.0 - (PATCH_SIZE as f32 / 2.0);
-                match &*slide{
-                    None => return None,
-                    Some(slide) =>{
-                        slide.read_region(top as usize, left as usize, 0, PATCH_SIZE, PATCH_SIZE)
-                    }
-                }  
-            };
-            let patch = match patch {
-                Ok(ok) => ok,
-                Err(err) => {
-                    eprintln!("{err}");
-                    return None;
-                },
-            };
-
-            Some((centroid, centered_poly, patch))
+            (centroid, centered_polygone)
         })
-        .map(|(centroid, centered_poly, patch)|{
-            let patch = Tensor::from_image(patch.into());
-            let patch = patch.to_device(tch::Device::cuda_if_available());
-            let patch = patch.i(0..3);
+        .map(|(centroid, centered_polygone)|{
+            let mask = tch_utils::shapes::polygon(patch_size, patch_size, &centered_polygone.to_tchutils_points(), (Kind::Float, Device::Cpu));
 
-            let features = features::all_features(&centered_poly, &patch);
-            let i = done.fetch_add(1, Ordering::Relaxed);
-            println!("\x1B[F{} / {}", i, count);
-
+            let features = features::shape_features(&centered_polygone, &mask);
+            
             (centroid, features)
         })
-        .collect::<Vec<_>>();
-
-    let mut writer = WriterBuilder::new().from_path(args.output).unwrap();
-    Features::write_header_to_csv(&mut writer);
-    for (centroid, mut features) in features{
-        features.centroid_x = centroid.0;
-        features.centroid_y = centroid.1;
-        writer.serialize(features).unwrap();
-    }
-    
+        .for_each(|(centroid, mut features)|{
+            let mut output = output.lock().unwrap();
+            features.centroid_x = centroid[0];
+            features.centroid_y = centroid[1];
+            match output.serialize(features) {
+                Ok(_) => {},
+                Err(err) => {
+                    error!("Error while writing to csv : {}", err);
+                },
+            };
+            let done = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if done % 100 == 0 {
+                println!("{} / {}", done, count);
+            }
+        });
 }

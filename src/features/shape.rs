@@ -20,7 +20,7 @@ pub(crate) fn perimeter(polygon: &Vec<[f32; 2]>) -> f32{
 }
 
 pub(crate) fn major_minor_axes_w_angle(mask: &Tensor) -> (f32, f32, f32) {
-    let nz = mask.nonzero().i((.., -2..=-1));
+    let nz = mask.squeeze().nonzero();
     let centroid = nz.mean_dim(Some(vec![0].as_slice()), false, tch::Kind::Float);
 
     let points = nz - centroid;

@@ -19,8 +19,10 @@ use self::{shape::{center_of_mass, major_minor_axes_w_angle, eccentricity, conve
  * - perimeter
  * - convex perimeter
  */
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, FieldNamesAsArray)]
 pub(crate) struct ShapeFeatures {
+    pub(crate) centroid_x: f32,
+    pub(crate) centroid_y: f32,
     pub(crate) area: f32,
     pub(crate) perimeter: f32,
     pub(crate) equivalent_perimeter: f32,
@@ -35,6 +37,13 @@ pub(crate) struct ShapeFeatures {
     pub(crate) convex_negative_defect: f32,
     pub(crate) convex_perimeter: f32,
     pub(crate) compacity: f32,
+}
+
+impl ShapeFeatures{
+    pub fn write_header_to_csv<W: io::Write>(writer: &mut csv::Writer<W>) -> Result<(), csv::Error> {
+        writer.write_record(Self::FIELD_NAMES_AS_ARRAY)?;
+        Ok(())
+    }
 }
 
 pub struct ColorFeatures {
@@ -171,204 +180,6 @@ impl Features {
     }
 }
 
-pub(crate) fn all_features(polygon: &Vec<[f32; 2]>, patch: &Tensor) -> Features {
-    let device = patch.device();
-    let mask = tch_utils::shapes::polygon(PATCH_SIZE, PATCH_SIZE, &polygon.to_tchutils_points(), (Kind::Float, device));
-    
-    let ShapeFeatures {
-        area,
-        perimeter,
-        equivalent_perimeter,
-        major_axis,
-        minor_axis,
-        eccentricity,
-        orientation,
-        eliptic_deviation,
-        convex_hull_area,
-        convex_deffect,
-        convex_positive_defect,
-        convex_negative_defect,
-        convex_perimeter,
-        compacity,
-    } = shape_features(polygon, &mask);
-
-    let ColorFeatures{
-        mean_r,
-        mean_g,
-        mean_b,
-        std_r,
-        std_g,
-        std_b,
-        mean_h,
-        mean_s,
-        mean_v,
-        std_h,
-        std_s,
-        std_v,
-        mean_hematoxylin,
-        mean_eosine,
-        mean_dab,
-        std_hematoxykin,
-        std_eosine,
-        std_dab,
-    } = color_features(patch, &mask);
-    
-    let glcms = glcm_features(patch, &mask);
-
-    let GlcmFeatures{
-        correlation: glcm0_correlation,
-        contraste: glcm0_contraste,
-        dissimilarity: glcm0_dissimilarity,
-        entropy: glcm0_entropy,
-        angular_second_moment: glcm0_angular_second_moment,
-        sum_average: glcm0_sum_average,
-        sum_variance: glcm0_sum_variance,
-        sum_entropy: glcm0_sum_entropy,
-        sum_of_squares: glcm0_sum_of_squares,
-        inverse_difference_moment: glcm0_inverse_difference_moment,
-        difference_variance: glcm0_difference_variance,
-        information_measure_correlation1: glcm0_information_measure_correlation1,
-        information_measure_correlation2: glcm0_information_measure_correlation2,
-    } = glcms[0];
-
-    let GlcmFeatures{
-        correlation: glcm45_correlation,
-        contraste: glcm45_contraste,
-        dissimilarity: glcm45_dissimilarity,
-        entropy: glcm45_entropy,
-        angular_second_moment: glcm45_angular_second_moment,
-        sum_average: glcm45_sum_average,
-        sum_variance: glcm45_sum_variance,
-        sum_entropy: glcm45_sum_entropy,
-        sum_of_squares: glcm45_sum_of_squares,
-        inverse_difference_moment: glcm45_inverse_difference_moment,
-        difference_variance: glcm45_difference_variance,
-        information_measure_correlation1: glcm45_information_measure_correlation1,
-        information_measure_correlation2: glcm45_information_measure_correlation2,
-    } = glcms[1];
-
-    let GlcmFeatures{
-        correlation: glcm90_correlation,
-        contraste: glcm90_contraste,
-        dissimilarity: glcm90_dissimilarity,
-        entropy: glcm90_entropy,
-        angular_second_moment: glcm90_angular_second_moment,
-        sum_average: glcm90_sum_average,
-        sum_variance: glcm90_sum_variance,
-        sum_entropy: glcm90_sum_entropy,
-        sum_of_squares: glcm90_sum_of_squares,
-        inverse_difference_moment: glcm90_inverse_difference_moment,
-        difference_variance: glcm90_difference_variance,
-        information_measure_correlation1: glcm90_information_measure_correlation1,
-        information_measure_correlation2: glcm90_information_measure_correlation2,
-    } = glcms[2];
-
-    let GlcmFeatures{
-        correlation: glcm135_correlation,
-        contraste: glcm135_contraste,
-        dissimilarity: glcm135_dissimilarity,
-        entropy: glcm135_entropy,
-        angular_second_moment: glcm135_angular_second_moment,
-        sum_average: glcm135_sum_average,
-        sum_variance: glcm135_sum_variance,
-        sum_entropy: glcm135_sum_entropy,
-        sum_of_squares: glcm135_sum_of_squares,
-        inverse_difference_moment: glcm135_inverse_difference_moment,
-        difference_variance: glcm135_difference_variance,
-        information_measure_correlation1: glcm135_information_measure_correlation1,
-        information_measure_correlation2: glcm135_information_measure_correlation2,
-    } = glcms[3];
-
-    Features {
-        area,
-        perimeter,
-        equivalent_perimeter,
-        major_axis,
-        minor_axis,
-        eccentricity,
-        orientation,
-        eliptic_deviation,
-        convex_hull_area,
-        convex_deffect,
-        convex_positive_defect,
-        convex_negative_defect,
-        convex_perimeter,
-        compacity,
-        mean_r,
-        mean_g,
-        mean_b,
-        std_r,
-        std_g,
-        std_b,
-        mean_h,
-        mean_s,
-        mean_v,
-        std_h,
-        std_s,
-        std_v,
-        mean_hematoxylin,
-        mean_eosine,
-        mean_dab,
-        std_hematoxykin,
-        std_eosine,
-        std_dab,
-        glcm0_correlation,
-        glcm0_contraste,
-        glcm0_dissimilarity,
-        glcm0_entropy,
-        glcm0_angular_second_moment,
-        glcm0_sum_average,
-        glcm0_sum_variance,
-        glcm0_sum_entropy,
-        glcm0_sum_of_squares,
-        glcm0_inverse_difference_moment,
-        glcm0_difference_variance,
-        glcm0_information_measure_correlation1,
-        glcm0_information_measure_correlation2,
-        glcm45_correlation,
-        glcm45_contraste,
-        glcm45_dissimilarity,
-        glcm45_entropy,
-        glcm45_angular_second_moment,
-        glcm45_sum_average,
-        glcm45_sum_variance,
-        glcm45_sum_entropy,
-        glcm45_sum_of_squares,
-        glcm45_inverse_difference_moment,
-        glcm45_difference_variance,
-        glcm45_information_measure_correlation1,
-        glcm45_information_measure_correlation2,
-        glcm90_correlation,
-        glcm90_contraste,
-        glcm90_dissimilarity,
-        glcm90_entropy,
-        glcm90_angular_second_moment,
-        glcm90_sum_average,
-        glcm90_sum_variance,
-        glcm90_sum_entropy,
-        glcm90_sum_of_squares,
-        glcm90_inverse_difference_moment,
-        glcm90_difference_variance,
-        glcm90_information_measure_correlation1,
-        glcm90_information_measure_correlation2,
-        glcm135_correlation,
-        glcm135_contraste,
-        glcm135_dissimilarity,
-        glcm135_entropy,
-        glcm135_angular_second_moment,
-        glcm135_sum_average,
-        glcm135_sum_variance,
-        glcm135_sum_entropy,
-        glcm135_sum_of_squares,
-        glcm135_inverse_difference_moment,
-        glcm135_difference_variance,
-        glcm135_information_measure_correlation1,
-        glcm135_information_measure_correlation2,
-        centroid_x: 0.0,
-        centroid_y: 0.0,
-    }
-}
-
 pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFeatures {
     let device = mask.device();
     let hull_mask =
@@ -412,7 +223,9 @@ pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFea
         convex_deffect,
         convex_positive_defect,
         convex_negative_defect,
-        convex_perimeter
+        convex_perimeter,
+        centroid_x: 0.0,
+        centroid_y: 0.0,
     }
 }
 
