@@ -6,7 +6,7 @@ use log::error;
 pub enum FeatureSet{
     Geometry, 
     Color,
-    Texture,
+    Glcm,
 }
 
 impl std::str::FromStr for FeatureSet{
@@ -15,7 +15,7 @@ impl std::str::FromStr for FeatureSet{
         match s {
             "geometry" => Ok(FeatureSet::Geometry),
             "color" => Ok(FeatureSet::Color),
-            "texture" => Ok(FeatureSet::Texture),
+            "glcm" => Ok(FeatureSet::Glcm),
             _ => Err(format!("{} is not a valid feature set", s)),
         }
     }
@@ -50,10 +50,6 @@ pub struct Args{
     /// if not specified, will use the cpu
     #[clap(short, long)]
     pub gpus: Option<Vec<usize>>,
-    /// openslide instance count :
-    /// the number of openslide instances to use
-    #[clap(long, default_value = "1")]
-    pub openslide_instance_count: usize,
     /// batch size :
     /// the number of patches to extract at once
     #[clap(short, long, default_value = "1000")]

@@ -5,9 +5,9 @@ mod texture;
 use std::io;
 
 use struct_field_names_as_array::FieldNamesAsArray;
-use tch::{Kind, Tensor};
+use tch::{Kind, Tensor, index::*};
 
-use crate::{consts::PATCH_SIZE, utils::PointsExt};
+use crate::{consts::PATCH_SIZE, utils::PointsExt, features::color::{circular_mean, circular_std}};
 
 use self::{shape::{center_of_mass, major_minor_axes_w_angle, eccentricity, convex_hull, perimeter, area, equivalent_perimeter, compacity, eliptic_deviation, convex_hull_stats}, color::mean_std, texture::{GlcmFeatures, glcm_features}};
 
@@ -46,7 +46,10 @@ impl ShapeFeatures{
     }
 }
 
+#[derive(Debug, serde::Serialize, FieldNamesAsArray)]
 pub struct ColorFeatures {
+    pub centroid_x: f32,
+    pub centroid_y: f32,
     // RGB
     pub(crate) mean_r: f32,
     pub(crate) mean_g: f32,
@@ -62,121 +65,38 @@ pub struct ColorFeatures {
     pub(crate) std_s: f32,
     pub(crate) std_v: f32,
     // HED
-    pub(crate) mean_hematoxylin: f32,
-    pub(crate) mean_eosine: f32,
+    pub(crate) mean_haematoxylin: f32,
+    pub(crate) mean_eosin: f32,
     pub(crate) mean_dab: f32,
-    pub(crate) std_hematoxykin : f32,
-    pub(crate) std_eosine: f32,
+    pub(crate) std_haematoxylin : f32,
+    pub(crate) std_eosin: f32,
     pub(crate) std_dab: f32, 
 }
+impl ColorFeatures {
+    pub(crate) fn set_all_nan(& mut self) {
+        self.mean_r = f32::NAN;
+        self.mean_g = f32::NAN;
+        self.mean_b = f32::NAN;
+        self.std_r = f32::NAN;
+        self.std_g = f32::NAN;
+        self.std_b = f32::NAN;
+        self.mean_h = f32::NAN;
+        self.mean_s = f32::NAN;
+        self.mean_v = f32::NAN;
+        self.std_h = f32::NAN;
+        self.std_s = f32::NAN;
+        self.std_v = f32::NAN;
+        self.mean_haematoxylin = f32::NAN;
+        self.mean_eosin = f32::NAN;
+        self.mean_dab = f32::NAN;
+        self.std_haematoxylin = f32::NAN;
+        self.std_eosin = f32::NAN;
+        self.std_dab = f32::NAN;
+    }
 
-/*
-Added metrics to Medhi's features:
-- shapes
-    - convex deffect
-    - convex positive deffect
-    - convex negative deffect
-    - perimeter
-    - convex perimeter
-
- */
-#[derive(Debug, serde::Serialize, FieldNamesAsArray)]
-pub(crate) struct Features {
-    // centroid 
-    pub(crate) centroid_x: f32,
-    pub(crate) centroid_y: f32,
-    // Shape features
-    pub(crate) area: f32,
-    pub(crate) perimeter: f32,
-    pub(crate) equivalent_perimeter: f32,
-    pub(crate) major_axis: f32,
-    pub(crate) minor_axis: f32,
-    pub(crate) eccentricity: f32,
-    pub(crate) orientation: f32,
-    pub(crate) eliptic_deviation: f32,
-    pub(crate) convex_hull_area: f32,
-    pub(crate) convex_deffect: f32,
-    pub(crate) convex_positive_defect: f32,
-    pub(crate) convex_negative_defect: f32,
-    pub(crate) convex_perimeter: f32,
-    pub(crate) compacity: f32,
-    // Color features
-    pub(crate) mean_r: f32,
-    pub(crate) mean_g: f32,
-    pub(crate) mean_b: f32,
-    pub(crate) std_r: f32,
-    pub(crate) std_g: f32,
-    pub(crate) std_b: f32,
-    pub(crate) mean_h: f32,
-    pub(crate) mean_s: f32,
-    pub(crate) mean_v: f32,
-    pub(crate) std_h: f32,
-    pub(crate) std_s: f32,
-    pub(crate) std_v: f32,
-    pub(crate) mean_hematoxylin: f32,
-    pub(crate) mean_eosine: f32,
-    pub(crate) mean_dab: f32,
-    pub(crate) std_hematoxykin : f32,
-    pub(crate) std_eosine: f32,
-    pub(crate) std_dab: f32, 
-    // GLCM features
-    pub glcm0_correlation: f32,
-    pub glcm0_contraste: f32,
-    pub glcm0_dissimilarity: f32,
-    pub glcm0_entropy: f32,
-    pub glcm0_angular_second_moment: f32,
-    pub glcm0_sum_average: f32,
-    pub glcm0_sum_variance: f32,
-    pub glcm0_sum_entropy: f32,
-    pub glcm0_sum_of_squares: f32,
-    pub glcm0_inverse_difference_moment: f32,
-    pub glcm0_difference_variance: f32,
-    pub glcm0_information_measure_correlation1: f32,
-    pub glcm0_information_measure_correlation2: f32,
-    pub glcm45_correlation: f32,
-    pub glcm45_contraste: f32,
-    pub glcm45_dissimilarity: f32,
-    pub glcm45_entropy: f32,
-    pub glcm45_angular_second_moment: f32,
-    pub glcm45_sum_average: f32,
-    pub glcm45_sum_variance: f32,
-    pub glcm45_sum_entropy: f32,
-    pub glcm45_sum_of_squares: f32,
-    pub glcm45_inverse_difference_moment: f32,
-    pub glcm45_difference_variance: f32,
-    pub glcm45_information_measure_correlation1: f32,
-    pub glcm45_information_measure_correlation2: f32,
-    pub glcm90_correlation: f32,
-    pub glcm90_contraste: f32,
-    pub glcm90_dissimilarity: f32,
-    pub glcm90_entropy: f32,
-    pub glcm90_angular_second_moment: f32,
-    pub glcm90_sum_average: f32,
-    pub glcm90_sum_variance: f32,
-    pub glcm90_sum_entropy: f32,
-    pub glcm90_sum_of_squares: f32,
-    pub glcm90_inverse_difference_moment: f32,
-    pub glcm90_difference_variance: f32,
-    pub glcm90_information_measure_correlation1: f32,
-    pub glcm90_information_measure_correlation2: f32,
-    pub glcm135_correlation: f32,
-    pub glcm135_contraste: f32,
-    pub glcm135_dissimilarity: f32,
-    pub glcm135_entropy: f32,
-    pub glcm135_angular_second_moment: f32,
-    pub glcm135_sum_average: f32,
-    pub glcm135_sum_variance: f32,
-    pub glcm135_sum_entropy: f32,
-    pub glcm135_sum_of_squares: f32,
-    pub glcm135_inverse_difference_moment: f32,
-    pub glcm135_difference_variance: f32,
-    pub glcm135_information_measure_correlation1: f32,
-    pub glcm135_information_measure_correlation2: f32,
-}
-
-impl Features {
-    pub(crate) fn write_header_to_csv<W: io::Write>( wtr:&mut csv::Writer<W>){
-        wtr.write_record(Features::FIELD_NAMES_AS_ARRAY).unwrap();
+    pub fn write_header_to_csv<W: io::Write>(writer: &mut csv::Writer<W>) -> Result<(), csv::Error> {
+        writer.write_record(Self::FIELD_NAMES_AS_ARRAY)?;
+        Ok(())
     }
 }
 
@@ -229,38 +149,63 @@ pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFea
     }
 }
 
-pub fn color_features(patch:&Tensor, mask: &Tensor) -> ColorFeatures{
-    let hsv = tch_utils::color::hsv_from_rgb(&patch.unsqueeze(0)).squeeze();
-    let hed = tch_utils::color::hed_from_rgb(&patch.unsqueeze(0)).squeeze();
-    let ((mean_r, mean_g, mean_b), (std_r, std_g, std_b)) = mean_std(patch, mask);
-    let ((_, mean_s, mean_v), (std_h, std_s, std_v)) = mean_std(&hsv, mask);
-    let ((mean_hematoxylin, mean_eosine, mean_dab), (std_hematoxykin, std_eosine, std_dab)) = mean_std(&hed, mask);
+pub fn color_features(patch:&Tensor, mask: &Tensor) -> Vec<ColorFeatures>{
+    let hsv = tch_utils::color::hsv_from_rgb(patch);
+    let hed = tch_utils::color::hed_from_rgb(patch);
+    let (mean_rgb, std_rgb) = mean_std(patch, mask);
+    let (mean_hsv, std_hsv) = mean_std(&hsv, mask);
+    let (mean_hed, std_hed) = mean_std(&hed, mask);
 
-    // TODO mask is not used
     let h = hsv.select(-3, 0);
-    let c = f64::from(h.cos().mean(Kind::Float));
-    let s = f64::from(h.sin().mean(Kind::Float));
-    let mean_h = c.atan2(s) as f32;
-
+    let mean_h = circular_mean(&h, &mask);
+    let std_h = circular_std(&h, &mask, &mean_h);
     
-    ColorFeatures {
-        mean_r,
-        mean_g,
-        mean_b,
-        std_r,
-        std_g,
-        std_b,
-        mean_h,
-        mean_s,
-        mean_v,
-        std_h,
-        std_s,
-        std_v,
-        mean_hematoxylin,
-        mean_eosine,
-        mean_dab,
-        std_hematoxykin,
-        std_eosine,
-        std_dab,
+    let batch_size = patch.size()[0];
+    let mut features = Vec::with_capacity(batch_size as usize);
+    for i in 0..batch_size {
+        let [mean_r, mean_g, mean_b] = Vec::<f32>::from(mean_rgb.i(i))[..] else {
+            unreachable!("mean_rgb should be a 2D tensor of size [N, 3]");
+        };
+        let [std_r, std_g, std_b] = Vec::<f32>::from(std_rgb.i(i))[..] else {
+            unreachable!("std_rgb should be a 2D tensor of size [N, 3]");
+        };
+        let [mean_s, mean_v] = Vec::<f32>::from(mean_hsv.i(i))[1..] else {
+            unreachable!("mean_hsv should be a 2D tensor of size [N, 3]");
+        };
+        let [std_s, std_v] = Vec::<f32>::from(std_hsv.i(i))[1..] else {
+            unreachable!("std_hsv should be a 2D tensor of size [N, 3]");
+        };
+        let [mean_haematoxylin, mean_eosin, mean_dab] = Vec::<f32>::from(mean_hed.i(i))[..] else {
+            unreachable!("mean_hed should be a 2D tensor of size [N, 3]");
+        };
+        let [std_haematoxylin, std_eosin, std_dab] = Vec::<f32>::from(std_hed.i(i))[..] else {
+            unreachable!("std_hed should be a 2D tensor of size [N, 3]");
+        };
+        let mean_h = f32::from(mean_h.i(0));
+        let std_h = f32::from(std_h.i(0));
+
+        features.push(ColorFeatures {
+            centroid_x:0.0,
+            centroid_y:0.0,
+            mean_r,
+            mean_g,
+            mean_b,
+            std_r,
+            std_g,
+            std_b,
+            mean_s,
+            mean_v,
+            std_s,
+            std_v,
+            mean_haematoxylin,
+            mean_eosin,
+            mean_dab,
+            std_haematoxylin,
+            std_eosin,
+            std_dab,
+            mean_h,
+            std_h,
+        });
     }
+    features
 }
