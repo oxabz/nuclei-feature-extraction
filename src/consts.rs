@@ -1,1 +1,0 @@
-pub const PATCH_SIZE: usize = 64;

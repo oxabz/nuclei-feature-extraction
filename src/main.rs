@@ -2,7 +2,6 @@ mod args;
 mod geojson;
 mod utils;
 mod features;
-mod consts;
 use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::{AtomicU32, AtomicUsize}}, process::exit, iter::zip, path::Path};
 use features::{ShapeFeatures, color_features};
 use log::error;

@@ -7,7 +7,7 @@ use std::io;
 use struct_field_names_as_array::FieldNamesAsArray;
 use tch::{Kind, Tensor, index::*};
 
-use crate::{consts::PATCH_SIZE, utils::PointsExt, features::color::{circular_mean, circular_std}};
+use crate::{utils::PointsExt, features::color::{circular_mean, circular_std}};
 
 use self::{shape::{center_of_mass, major_minor_axes_w_angle, eccentricity, convex_hull, perimeter, area, equivalent_perimeter, compacity, eliptic_deviation, convex_hull_stats}, color::mean_std, texture::{GlcmFeatures, glcm_features}};
 
@@ -102,13 +102,14 @@ impl ColorFeatures {
 
 pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFeatures {
     let device = mask.device();
+    let patch_size = mask.size()[2] as usize;
     let hull_mask =
-        tch_utils::shapes::convex_hull(PATCH_SIZE, PATCH_SIZE, &polygon.to_tchutils_points(), (Kind::Float, device));
+        tch_utils::shapes::convex_hull(patch_size, patch_size, &polygon.to_tchutils_points(), (Kind::Float, device));
     let hull = convex_hull(polygon);
 
     let mut centroid = center_of_mass(&mask);
-    centroid[0] -= PATCH_SIZE as f32 / 2.0;
-    centroid[1] -= PATCH_SIZE as f32 / 2.0;
+    centroid[0] -= patch_size as f32 / 2.0;
+    centroid[1] -= patch_size as f32 / 2.0;
     let centroid = centroid;
 
     let (major_axis, minor_axis, angle) = major_minor_axes_w_angle(&mask);
@@ -116,8 +117,8 @@ pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFea
     let orientation = angle;
 
     let elipse_mask = tch_utils::shapes::ellipse(
-        PATCH_SIZE,
-        PATCH_SIZE,
+        patch_size,
+        patch_size,
         (centroid[0] as f64, centroid[1] as f64),
         (major_axis as f64 * 2.0, minor_axis as f64 * 2.0),
         angle as f64,
