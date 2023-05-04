@@ -84,7 +84,7 @@ pub(crate) fn load_slides(
                 let slide = slide.lock().unwrap();
                 let left = (centroid[0] - patch_size as f32 / 2.0) as usize;
                 let top = (centroid[1] - patch_size as f32 / 2.0) as usize;
-                slide.read_region(left, top, 0, patch_size, patch_size)
+                slide.read_region(top, left, 0, patch_size, patch_size)
             };
             {
                 patch.as_ref().unwrap().save("test.png").unwrap();

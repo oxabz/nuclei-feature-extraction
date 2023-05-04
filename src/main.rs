@@ -27,7 +27,7 @@ fn load_geometry() -> geojson::FeatureCollection{
 }
 
 fn open_output(path: &Path) -> Arc<Mutex<csv::Writer<BufWriter<File>>>> {
-    let output = File::create(path).unwrap();
+    let output = File::create(path).expect("error creating the output file");
     let output = BufWriter::new(output);
     let output = csv::WriterBuilder::default()
         .from_writer(output);
