@@ -105,44 +105,10 @@ fn color_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::
 
     let count = geometry.features.len();
     let done = AtomicU32::new(0);
-    let gpu_idx = AtomicUsize::new(0);
     geometry.features
         .par_chunks(batch_size)
-        .map(|nuclei|{
-            let (centroid_err, patch_mask) : (Vec<_>, Vec<_>) = nuclei.into_iter()
-                .map(preprocess_polygon)
-                .map(|(centroid, centered_polygone)|{
-                    let mask = tch_utils::shapes::polygon(patch_size, patch_size, &centered_polygone.to_tchutils_points(), (Kind::Float, Device::Cpu));
-                    let patch = {
-                        let slide = slide.lock().unwrap();
-                        let left = (centroid[0] - patch_size as f32 / 2.0) as usize;
-                        let top = (centroid[1] - patch_size as f32 / 2.0) as usize;
-                        slide.read_region(left, top, 0, patch_size, patch_size)
-                    };
-                    match patch {
-                        Ok(ok) => ((centroid, false), (Tensor::from_image(ok.into()), mask)),
-                        Err(err) => {
-                            error!("Error while reading patch for nuclei {centroid:?} : {}", err);
-                            ((centroid, true), (Tensor::ones(&[3, patch_size as i64, patch_size as i64], (Kind::Float, Device::Cpu)), mask))
-                        },
-                    }
-                })
-                .unzip();
-            let (centroids, err): (Vec<_>, Vec<_>) = centroid_err.into_iter().unzip();
-            let (patches, masks):(Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
-            let mut patches = Tensor::stack(&patches, 0);
-            let mut masks = Tensor::stack(&masks, 0);
-            
-            if let Some (gpus) = &gpus {
-                let gpus = gpus.clone();
-                let gpu_count = gpus.len();
-                let gpu_idx = gpu_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                patches = patches.to_device(Device::Cuda(gpus[gpu_idx % gpu_count]));
-                masks = masks.to_device(Device::Cuda(gpus[gpu_idx % gpu_count]));
-            }
-            
-            (centroids, err, patches, masks)
-        })
+        .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
+        .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
         .map(|(centroids, err, patches, masks)|{
             let color_features = color_features(&patches, &masks);
             (centroids, err, color_features)
@@ -157,11 +123,8 @@ fn color_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::
                 }
                 features.centroid_x = centroid[0];
                 features.centroid_y = centroid[1];
-                match output.serialize(features) {
-                    Ok(_) => {},
-                    Err(err) => {
-                        error!("Error while writing to csv : {}", err);
-                    },
+                if let Err(err) = output.serialize(features) {
+                    error!("Error while writing to csv : {}", err);
                 };
             }
             println!("{} / {}", done, count);
@@ -169,5 +132,35 @@ fn color_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::
 }
 
 fn glcm_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::OpenSlide>>){
-    
+    let Args {  output, patch_size, gpus, batch_size, .. } = ARGS.clone();
+    let patch_size = patch_size as usize;
+
+    let output = open_output(&output);
+
+    let count = geometry.features.len();
+    let done = AtomicU32::new(0);
+    geometry.features
+        .par_chunks(batch_size)
+        .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
+        .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
+        .map(|(centroids, err, patches, masks)|{
+            let color_features = color_features(&patches, &masks);
+            (centroids, err, color_features)
+        })
+        .for_each(|(centroids, err, color_features)|{
+            let res = zip(centroids, zip(err, color_features));
+            let mut output = output.lock().unwrap();
+            let done = done.fetch_add(res.len() as u32, std::sync::atomic::Ordering::Relaxed);
+            for (centroid, (err, mut features)) in res {
+                if err {
+                    features.set_all_nan();
+                }
+                features.centroid_x = centroid[0];
+                features.centroid_y = centroid[1];
+                if let Err(err) = output.serialize(features) {
+                    error!("Error while writing to csv : {}", err);
+                };
+            }
+            println!("{} / {}", done, count);
+        });
 }
