@@ -1,6 +1,6 @@
 mod shape;
 mod color;
-mod texture;
+pub mod texture;
 
 use std::io;
 

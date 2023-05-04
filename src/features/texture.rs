@@ -1,11 +1,13 @@
+use struct_field_names_as_array::FieldNamesAsArray;
 use tch::{Tensor, Kind, index::*};
 use tch_utils::{glcm::glcm, glrlm::glrlm};
 
 const GLCM_LEVELS: u8 = 64;
 
+#[derive(Debug, FieldNamesAsArray)]
 pub struct GlcmFeatures{
     pub correlation: f32,
-    pub contraste: f32,
+    pub contrast: f32,
     pub dissimilarity: f32,
     pub entropy: f32,
     pub angular_second_moment: f32,
@@ -14,147 +16,182 @@ pub struct GlcmFeatures{
     pub sum_entropy: f32,
     pub sum_of_squares: f32,
     pub inverse_difference_moment: f32,
+    pub difference_average: f32,
     pub difference_variance: f32,
     pub information_measure_correlation1: f32,
     pub information_measure_correlation2: f32,
 }
 
+impl GlcmFeatures {
+    pub fn write_header_to_csv<W: std::io::Write>(writer: &mut csv::Writer<W>) -> Result<(), csv::Error> {
+        let headers = OFFSETS.iter()
+            .flat_map(|offset|{
+                let (dx, dy) = offset;
+                GlcmFeatures::FIELD_NAMES_AS_ARRAY.iter()
+                    .map(move |field_name|format!("{field_name}_{dx}_{dy}"))
+            })
+            .collect::<Vec<_>>();
+        let mut rec = vec!["centroid_x".to_string(), "centroid_y".to_string()];
+        rec.extend(headers);
+        writer.write_record(rec)?;
+        Ok(())
+    }
+    
+    pub fn as_slice(&self)->&[f32]{
+        unsafe{
+            std::slice::from_raw_parts(
+                &self.correlation as *const f32,
+                std::mem::size_of::<GlcmFeatures>() / std::mem::size_of::<f32>()
+            )
+        }
+    }
+}
+
 const OFFSETS: [(i64, i64);4] = [(0, 1), (1, 1), (1, 0), (1, -1)]; // 0, 45, 90, 135
 
-pub fn glcm_features(image:&Tensor, mask:&Tensor)->Vec<GlcmFeatures>{
-    let gs = image.mean_dim(Some(&([-3][..])), true, Kind::Float).unsqueeze(0); // [1, 1, H, W]
+pub fn glcm_features(patches: &Tensor, masks:&Tensor)->(Vec<Vec<GlcmFeatures>>, Vec<(i64, i64)>){
+    let _ = tch::no_grad_guard();
+    let batch_size = patches.size()[0];
+
+    let gs = patches.mean_dim(Some(&([-3][..])), true, Kind::Float).unsqueeze(0); // [N, 1, H, W]
     let glcms = OFFSETS.iter()
-        .map(|offset|glcm(&gs, *offset, GLCM_LEVELS, Some(mask)).squeeze())
-        .collect::<Vec<_>>(); // [LEVEL, LEVEL] * 4
-    let mut features = Vec::with_capacity(glcms.len());
+        .map(|offset|(*offset, glcm(&gs, *offset, GLCM_LEVELS, Some(masks))))
+        .collect::<Vec<_>>(); // [N, LEVEL, LEVEL] * 4
+    let mut features = Vec::with_capacity(batch_size as usize);
+    for i in 0..batch_size {
+        features.push(Vec::with_capacity(glcms.len()))
+    }
 
-    for glcm in glcms.iter() {
-        // glcm: [LEVEL, LEVEL]
-        let px = glcm.sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [LEVEL]
-        let py = glcm.sum_dim_intlist(Some(&[-2][..]), false, Kind::Float); // [LEVEL]
+    for (offset, glcm) in glcms.iter() {
+        // glcm: [N, LEVEL, LEVEL]
+        let px = glcm.sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N, LEVEL]
+        let py = glcm.sum_dim_intlist(Some(&[-2][..]), false, Kind::Float); // [N, LEVEL]
 
-        let levels = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device()));
-        let intensity_x = (&levels * &px).sum(Kind::Float); // Scalar
-        let intensity_y = (&levels * &py).sum(Kind::Float); // Scalar
+        let levels = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patches.device())).unsqueeze(0); // [1, LEVEL]
+        let intensity_x = (&levels * &px).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
+        let intensity_y = (&levels * &py).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
 
-        let std_x = px.std(true); // Scalar
-        let std_y = py.std(true); // Scalar
+        let std_x = px.std_dim(Some(&[-1][..]), true, false); // [N]
+        let std_y = py.std_dim(Some(&[-1][..]), true, false); // [N]
 
         
-        let (pxpy, pxdy) = { // [LEVEL * 2 - 2], [LEVEL]
-            let pxpy = Tensor::zeros(&[GLCM_LEVELS as i64 * 2 - 2], (Kind::Float, image.device())); // [LEVEL * 2 - 2]
-            let pxdy = Tensor::zeros(&[GLCM_LEVELS as i64], (Kind::Float, image.device())); // [LEVEL]
+        let (pxpy, pxdy) = { // [N, LEVEL * 2 - 2], [N, LEVEL]
+            let pxpy = Tensor::zeros(&[batch_size, GLCM_LEVELS as i64 * 2 - 2], (Kind::Float, patches.device())); // [N, LEVEL * 2 - 2]
+            let pxdy = Tensor::zeros(&[batch_size, GLCM_LEVELS as i64], (Kind::Float, patches.device())); // [N, LEVEL]
             for i in 0..GLCM_LEVELS {
                 for j in 0..GLCM_LEVELS {
                     let (i, j) = (i as i64, j as i64);
                     let idx1 = (i + j) - 2;
                     let idx2 = (i - j).abs();
-                    let mut t1 = pxpy.i(idx1);
-                    let mut t2 = pxdy.i(idx2);
-                    t1 += glcm.i((i,j));
-                    t2 += glcm.i((i,j));
+                    let mut t1 = pxpy.i((.., idx1));
+                    let mut t2 = pxdy.i((.., idx2));
+                    t1 += glcm.i((..,i,j));
+                    t2 += glcm.i((..,i,j));
                 }
             }
             (pxpy, pxdy)
         };
 
-        let entropy_x = -(&px * (&px + 1e-6).log2()).sum(Kind::Float); // Scalar
-        let entropy_y = -(&py * (&py + 1e-6).log2()).sum(Kind::Float); // Scalar
-        let entropy_xy = -(glcm * (glcm + 1e-6).log2()).sum(Kind::Float); // Scalar
+        let entropy_x = -(&px * (&px + 1e-6).log2()).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
+        let entropy_y = -(&py * (&py + 1e-6).log2()).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
+        let entropy_xy = -(glcm * (glcm + 1e-6).log2()).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float); // [N]
 
-        let (hxy1, hxy2) = { // Scalar, Scalar
-            let pxpy = px.unsqueeze(1).matmul(&py.unsqueeze(0));
-            let hxy1 = - (glcm * (&pxpy + 1e-6).log2()).sum(Kind::Float);
-            let hxy2 = - (&pxpy * (&pxpy + 1e-6).log2()).sum(Kind::Float);
+        let (hxy1, hxy2) = { // [N], [N]
+            let pxpy = px.unsqueeze(-1).matmul(&py.unsqueeze(-2)); // [N, LEVEL, LEVEL]
+            let hxy1 = - (glcm * (&pxpy + 1e-6).log2()).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float);
+            let hxy2 = - (&pxpy * (&pxpy + 1e-6).log2()).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float);
             (hxy1, hxy2)
         };
 
-        let correlation = {
-            let intensity = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device()));
-            let intensity = intensity.unsqueeze(1).matmul(&intensity.unsqueeze(0));
-            (glcm * intensity - &intensity_x * &intensity_y).sum(Kind::Float)
-        };
-        let correlation = f32::from(correlation);
-
-        let (contraste, dissimilarity) = {
-            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(1).repeat(&[1,GLCM_LEVELS as i64]);
-            let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(0).repeat(&[GLCM_LEVELS as i64,1]);
-            let imj = &i * (&i - &j).square();
-            let contrast = (glcm * imj).sum(Kind::Float);
-            let imj = (i - j).abs();
-            let dissimilarity = (glcm * imj).sum(Kind::Float);
-            (f32::from(contrast), f32::from(dissimilarity))
+        let correlation = { //[N]
+            let intensity = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patches.device()));
+            let intensity = intensity.unsqueeze(1).matmul(&intensity.unsqueeze(0)).unsqueeze(0); // [1, LEVEL, LEVEL]
+            (glcm * intensity - &intensity_x * &intensity_y).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float)
         };
 
-        let entropy = f32::from(- (glcm * (glcm + 1e-6).log2()).sum(Kind::Float));
-
-        let angular_second_moment = f32::from(glcm.square().sum(Kind::Float));
-
-        let sum_average = {
-            let k = Tensor::arange(GLCM_LEVELS as i64 * 2 - 2, (Kind::Float, image.device())) + 2;
-            let sum = (k * &pxpy).sum(Kind::Float);
-            f32::from(sum)
+        let (contrast, dissimilarity) = {
+            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patches.device())).view([1, 1, GLCM_LEVELS as i64]);
+            let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patches.device())).view([1, GLCM_LEVELS as i64, 1]);
+            let imj = &i * (&i - &j).square(); // [1, LEVEL, LEVEL]
+            let contrast = (glcm * imj).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float); // [N]
+            let imj = (i - j).abs(); // [1, LEVEL, LEVEL]
+            let dissimilarity = (glcm * imj).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float);
+            (contrast, dissimilarity)
         };
 
-        let sum_variance = {
-            let k = Tensor::arange(GLCM_LEVELS as i64 * 2 - 2, (Kind::Float, image.device())) + 2;
-            let sum = (- sum_average + k).square() * &pxpy;
-            f32::from(sum.sum(Kind::Float))
+        let entropy = - (glcm * (glcm + 1e-6).log2()).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float);
+
+        let angular_second_moment = glcm.square().sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float);
+
+        let (sum_average, sum_variance) = { // [N], [N]
+            let k = (Tensor::arange(GLCM_LEVELS as i64 * 2 - 2, (Kind::Float, patches.device())) + 2).unsqueeze(0);
+            let sum_avg = (&k * &pxpy).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
+            let sum_var = ((k - sum_avg.unsqueeze(1)).square() * &pxpy).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float);
+            (sum_avg, sum_var)
         };
 
-        let sum_entropy = {
-            let sum = &pxpy * (&pxpy + 1e-6).log2();
-            f32::from(- sum.sum(Kind::Float))
-        };
+        let sum_entropy = - (&pxpy * (&pxpy + 1e-6).log2()).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float);
 
         let sum_of_squares = {
-            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(1).repeat(&[1, GLCM_LEVELS as i64]);
-            let var = (i - &intensity_x).square() * glcm;
-            f32::from(var.sum(Kind::Float))
+            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patches.device())).view([1, GLCM_LEVELS as i64]);
+            let var = (i - intensity_x.unsqueeze(1)).square().unsqueeze(-1) * glcm;
+            var.sum_dim_intlist(Some(&[-1,-2][..]), false, Kind::Float)
         };
 
         let inverse_difference_moment = {
-            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(1).repeat(&[1, GLCM_LEVELS as i64]);
-            let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device())).unsqueeze(0).repeat(&[GLCM_LEVELS as i64, 1]);
+            let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patches.device())).view([1,-1,1]);
+            let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patches.device())).view([1,1,-1]);
             let imj = (i - j).square();
             let idm = glcm / (imj + 1.0);
-            f32::from(idm.sum(Kind::Float))
+            idm.sum_dim_intlist(Some(&[-1,-2][..]), false, Kind::Float)
         };
 
-        let difference_variance = {
-            let k = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, image.device()));
-            let da = (&k * &pxdy).sum(Kind::Float);
-            let dva = (- da + &k).square() * &pxdy;
-            f32::from(dva.sum(Kind::Float))
+        let (difference_average, difference_variance) = {
+            let k = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patches.device())).unsqueeze(0);
+            let da = (&k * &pxdy).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
+            let dva = ((k - da.unsqueeze(-1)).square() * &pxdy).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float);
+            (da, dva)
         };
 
-        let information_measure_correlation1 = {
-            let imc1 = &entropy_xy - hxy1 / entropy_x.max_other(&entropy_y);
-            f32::from(imc1)
-        };
+        let information_measure_correlation1 = (&entropy_xy - hxy1) / entropy_x.max_other(&entropy_y);
 
-        let information_measure_correlation2 = {
-            let imc2 = ( - ((hxy2 - &entropy_xy) * -2.0).exp() + 1.0).sqrt();
-            f32::from(imc2)
-        };
+        let information_measure_correlation2 = (- ((hxy2 - &entropy_xy) * -2.0).exp() + 1.0).sqrt();
         
-        features.push(GlcmFeatures{
-            correlation,
-            contraste,
-            dissimilarity,
-            entropy,
-            angular_second_moment,
-            sum_average,
-            sum_variance,
-            sum_entropy,
-            sum_of_squares,
-            inverse_difference_moment,
-            difference_variance,
-            information_measure_correlation1,
-            information_measure_correlation2,
-        });
+        for i in 0..batch_size{
+            let correlation = f32::from(correlation.i(i));
+            let contrast = f32::from(contrast.i(i));
+            let dissimilarity = f32::from(dissimilarity.i(i));
+            let entropy = f32::from(entropy.i(i));
+            let angular_second_moment = f32::from(angular_second_moment.i(i));
+            let sum_average = f32::from(sum_average.i(i));
+            let sum_variance = f32::from(sum_variance.i(i));
+            let sum_entropy = f32::from(sum_entropy.i(i));
+            let sum_of_squares = f32::from(sum_of_squares.i(i));
+            let inverse_difference_moment = f32::from(inverse_difference_moment.i(i));
+            let difference_average = f32::from(difference_average.i(i));
+            let difference_variance = f32::from(difference_variance.i(i));
+            let information_measure_correlation1 = f32::from(information_measure_correlation1.i(i));
+            let information_measure_correlation2 = f32::from(information_measure_correlation2.i(i));
+
+            features[i as usize].push(GlcmFeatures{
+                correlation,
+                contrast,
+                dissimilarity,
+                entropy,
+                angular_second_moment,
+                sum_average,
+                sum_variance,
+                sum_entropy,
+                sum_of_squares,
+                inverse_difference_moment,
+                difference_average,
+                difference_variance,
+                information_measure_correlation1,
+                information_measure_correlation2,
+            });
+        }
     }
-    features
+    (features, OFFSETS.to_vec())
 }
 
 const GLRLM_LEVELS: u8 = 24;
@@ -162,6 +199,7 @@ const GLRLM_MAX_LENGTH: i64 = 16;
 
 const DIRECTIONS: [(i64, i64); 4] = [(1,0), (1,1), (0,1), (-1, 1)];
 
+#[derive(Debug, Clone, FieldNamesAsArray)]
 pub struct GLRLMFeatures{
     pub short_run_emphasis: f32,
     pub long_run_emphasis: f32,

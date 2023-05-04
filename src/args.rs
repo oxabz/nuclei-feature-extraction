@@ -7,6 +7,7 @@ pub enum FeatureSet{
     Geometry, 
     Color,
     Glcm,
+    Glrlm,
 }
 
 impl std::str::FromStr for FeatureSet{
@@ -16,6 +17,7 @@ impl std::str::FromStr for FeatureSet{
             "geometry" => Ok(FeatureSet::Geometry),
             "color" => Ok(FeatureSet::Color),
             "glcm" => Ok(FeatureSet::Glcm),
+            "glrlm" => Ok(FeatureSet::Glrlm),
             _ => Err(format!("{} is not a valid feature set", s)),
         }
     }
