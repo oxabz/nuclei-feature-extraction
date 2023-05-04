@@ -4,7 +4,7 @@ mod utils;
 mod features;
 use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::{AtomicU32}}, process::exit, iter::zip, path::Path, borrow::BorrowMut};
 use csv::StringRecord;
-use features::{ShapeFeatures, color_features, ColorFeatures, texture::glcm_features};
+use features::{ShapeFeatures, color_features, ColorFeatures, texture::{glcm_features, glrlm_features, GLRLMFeatures}};
 use log::error;
 use args::{ARGS, Args};
 use rayon::prelude::*;
@@ -53,7 +53,7 @@ fn main(){
         args::FeatureSet::Geometry => geometry_main(geometry),
         args::FeatureSet::Color => color_main(geometry, slide),
         args::FeatureSet::Glcm => glcm_main(geometry, slide),
-        args::FeatureSet::Glrlm => todo!(),
+        args::FeatureSet::Glrlm => glrlm_main(geometry, slide),
     }
 }
 
@@ -109,7 +109,7 @@ fn color_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::
     let output = open_output(&output);
     if let Err(err) = {
         let mut output = output.lock().unwrap();
-        GlcmFeatures::write_header_to_csv(output.borrow_mut()) 
+        ColorFeatures::write_header_to_csv(output.borrow_mut()) 
     } {
         error!("Error while writing to csv : {}", err);
         exit(1);
@@ -148,6 +148,13 @@ fn glcm_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::O
     let patch_size = patch_size as usize;
 
     let output = open_output(&output);
+    if let Err(err) = {
+        let mut output = output.lock().unwrap();
+        GlcmFeatures::write_header_to_csv(output.borrow_mut()) 
+    } {
+        error!("Error while writing to csv : {}", err);
+        exit(1);
+    }
     
     let count = geometry.features.len();
     let done = AtomicU32::new(0);
@@ -177,6 +184,56 @@ fn glcm_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::O
                     };
                 }
                 let features = features.iter().map(GlcmFeatures::as_slice).flatten().map(f32::to_string).collect::<Vec<_>>();
+                let mut rec = vec![centroid_x.to_string(), centroid_y.to_string()];
+                rec.extend(features);
+                if let Err(err) = output.write_record(rec) {
+                    error!("Error while writing to csv : {}", err);
+                };
+            }
+            println!("{} / {}", done, count);
+        });
+}
+
+fn glrlm_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::OpenSlide>>){
+    let Args {  output, patch_size, gpus, batch_size, .. } = ARGS.clone();
+    let patch_size = patch_size as usize;
+
+    let output = open_output(&output);
+    if let Err(err) = {
+        let mut output = output.lock().unwrap();
+        GLRLMFeatures::write_header_to_csv(output.borrow_mut()) 
+    } {
+        error!("Error while writing to csv : {}", err);
+        exit(1);
+    }
+
+    let count = geometry.features.len();
+    let done = AtomicU32::new(0);
+    geometry.features
+        .par_chunks(batch_size)
+        .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
+        .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
+        .map(|(centroids, err, patches, masks)|{
+            let glrlm_features = glrlm_features(&patches, &masks);
+            (centroids, err, glrlm_features)
+        })
+        .for_each(|(centroids, err, glrlm_features)|{
+            let mut output = output.lock().unwrap();
+
+            let done = done.fetch_add(glrlm_features.len() as u32, std::sync::atomic::Ordering::Relaxed);
+            for (i, centroid) in centroids.iter().enumerate(){
+                let [centroid_x, centroid_y] = centroid;
+                let features = &glrlm_features[i];
+                if err[i] {
+                    let len = features.len();
+                    let nan = std::iter::repeat(f32::NAN).take(len * features.as_slice().len()).map(|x|f32::to_string(&x)).collect::<Vec<_>>();
+                    let mut rec = vec![centroid_x.to_string(), centroid_y.to_string()];
+                    rec.extend(nan);
+                    if let Err(err) = output.write_record(rec) {
+                        error!("Error while writing to csv : {}", err);
+                    };
+                }
+                let features = features.iter().map(GLRLMFeatures::as_slice).flatten().map(f32::to_string).collect::<Vec<_>>();
                 let mut rec = vec![centroid_x.to_string(), centroid_y.to_string()];
                 rec.extend(features);
                 if let Err(err) = output.write_record(rec) {

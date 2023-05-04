@@ -2,8 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use log::error;
 use openslide::OpenSlide;
-use rayon::prelude::*;
-use tch::{Tensor, Device, Kind};
+use tch::{Tensor, Device, Kind, index::*};
 use tch_utils::image::ImageTensorExt;
 
 use crate::geojson;
@@ -87,8 +86,20 @@ pub(crate) fn load_slides(
                 let top = (centroid[1] - patch_size as f32 / 2.0) as usize;
                 slide.read_region(left, top, 0, patch_size, patch_size)
             };
+            {
+                patch.as_ref().unwrap().save("test.png").unwrap();
+            }
             match patch {
-                Ok(ok) => ((centroid, false), (Tensor::from_image(ok.into()), mask)),
+                Ok(ok) => {
+                    let tensor = Tensor::from_image(ok.into()).i(..3);
+                    if tensor.size().as_slice() != &[3, patch_size as i64, patch_size as i64] {
+                        let padded = Tensor::zeros(&[3, patch_size as i64, patch_size as i64], (Kind::Float, Device::Cpu));
+                        padded.i((..tensor.size()[0], ..tensor.size()[1], ..tensor.size()[2])).copy_(&tensor);
+                        ((centroid, false), (padded, mask))
+                    } else {
+                        ((centroid, false), (tensor, mask))
+                    }
+                },
                 Err(err) => {
                     error!("Error while reading patch for nuclei {centroid:?} : {}", err);
                     ((centroid, true), (Tensor::ones(&[3, patch_size as i64, patch_size as i64], (Kind::Float, Device::Cpu)), mask))

@@ -151,6 +151,8 @@ pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFea
 }
 
 pub fn color_features(patch:&Tensor, mask: &Tensor) -> Vec<ColorFeatures>{
+    println!("mask size: {:?}", f32::from(mask.sum(Kind::Float)));
+    println!("patch sum: {:?}", f32::from(patch.sum(Kind::Float)));
     let hsv = tch_utils::color::hsv_from_rgb(patch);
     let hed = tch_utils::color::hed_from_rgb(patch);
     let (mean_rgb, std_rgb) = mean_std(patch, mask);
