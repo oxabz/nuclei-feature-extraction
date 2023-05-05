@@ -76,18 +76,16 @@ pub(crate) fn load_slides(
     slide: Arc<Mutex<OpenSlide>>, 
     patch_size: usize
     ) -> (Vec<[f32;2]>, Vec<bool>, Tensor, Tensor){
+    let slide = slide.lock().unwrap();
+    let start = std::time::Instant::now();
     let (centroid_err, patch_mask) : (Vec<_>, Vec<_>) = features.into_iter()
         .map(preprocess_polygon)
         .map(|(centroid, centered_polygone)|{
             let mask = tch_utils::shapes::polygon(patch_size, patch_size, &centered_polygone.to_tchutils_points(), (Kind::Float, Device::Cpu));
             let patch = {
-                let slide = slide.lock().unwrap();
                 let left = (centroid[0] - patch_size as f32 / 2.0) as usize;
                 let top = (centroid[1] - patch_size as f32 / 2.0) as usize;
-                let start = std::time::Instant::now();
-                let res = slide.read_region(top, left, 0, patch_size, patch_size);
-                debug!("read_region took {:?}", start.elapsed());
-                res
+                slide.read_region(top, left, 0, patch_size, patch_size)
             };
             match patch {
                 Ok(ok) => {
@@ -111,7 +109,7 @@ pub(crate) fn load_slides(
     let (patches, masks):(Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
     let patches = Tensor::stack(&patches, 0);
     let masks = Tensor::stack(&masks, 0);
-    debug!("patches size {:?}", patches.size());
+    debug!("Loaded {} patch in {:?}", patches.size()[0], start.elapsed());
     (centroids, err, patches, masks)
 }
 
@@ -123,6 +121,7 @@ pub(crate) fn load_slides2(
     slide: &Path, 
     patch_size: usize
     ) -> (Vec<[f32;2]>, Vec<bool>, Tensor, Tensor){
+    let start = std::time::Instant::now();
     let slide = OpenSlide::new(slide).unwrap();
     let (centroid_err, patch_mask) : (Vec<_>, Vec<_>) = features.into_iter()
         .map(preprocess_polygon)
@@ -131,8 +130,7 @@ pub(crate) fn load_slides2(
             let patch = {
                 let left = (centroid[0] - patch_size as f32 / 2.0) as usize;
                 let top = (centroid[1] - patch_size as f32 / 2.0) as usize;
-                let res = slide.read_region(top, left, 0, patch_size, patch_size);
-                res
+                slide.read_region(top, left, 0, patch_size, patch_size)
             };
             match patch {
                 Ok(ok) => {
@@ -156,7 +154,7 @@ pub(crate) fn load_slides2(
     let (patches, masks):(Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
     let patches = Tensor::stack(&patches, 0);
     let masks = Tensor::stack(&masks, 0);
-    debug!("patches size {:?}", patches.size());
+    debug!("Loaded {} patch in {:?}", patches.size()[0], start.elapsed());
     (centroids, err, patches, masks)
 }
 

@@ -4,7 +4,7 @@ mod utils;
 mod features;
 use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::{AtomicU32}}, process::exit, iter::zip, path::Path, borrow::BorrowMut};
 use features::{color_features, texture::{glcm_features, glrlm_features, GLRLMFeatures}};
-use log::error;
+use log::{error, debug};
 use args::{ARGS, Args};
 use rayon::prelude::*;
 use tch::{Kind, Device};
@@ -107,7 +107,9 @@ fn color_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::
         .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
         .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
         .map(|(centroids, err, patches, masks)|{
+            let start = std::time::Instant::now();
             let color_features = color_features(&patches, &masks);
+            debug!("Computed color features for {} patches in {:?}", centroids.len(), start.elapsed());
             (centroids, err, color_features)
         })
         .for_each(|(centroids, err, color_features)|{
@@ -145,10 +147,12 @@ fn glcm_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::O
     let done = AtomicU32::new(0);
     geometry.features
         .par_chunks(batch_size)
-        .map(|nuclei| utils::load_slides2(nuclei, &ARGS.slide, patch_size))
+        .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
         .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
         .map(|(centroids, err, patches, masks)|{
+            let start = std::time::Instant::now();
             let glcm_features = glcm_features(&patches, &masks);
+            debug!("Computed glcm features for {} patches in {:?}", centroids.len(), start.elapsed());
             (centroids, err, glcm_features)
         })
         .for_each(|(centroids, err, glcm_features)|{
@@ -199,7 +203,9 @@ fn glrlm_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::
         .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
         .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
         .map(|(centroids, err, patches, masks)|{
+            let start = std::time::Instant::now();
             let glrlm_features = glrlm_features(&patches, &masks);
+            debug!("Computed glrlm features for {} patches in {:?}", centroids.len(), start.elapsed());
             (centroids, err, glrlm_features)
         })
         .for_each(|(centroids, err, glrlm_features)|{
