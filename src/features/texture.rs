@@ -106,7 +106,7 @@ pub fn glcm_features(patches: &Tensor, masks:&Tensor)->(Vec<Vec<GlcmFeatures>>, 
         let correlation = { //[N]
             let intensity = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patches.device()));
             let intensity = intensity.unsqueeze(1).matmul(&intensity.unsqueeze(0)).unsqueeze(0); // [1, LEVEL, LEVEL]
-            (glcm * intensity - &intensity_x * &intensity_y).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float)
+            (glcm * intensity - (&intensity_x * &intensity_y).view([-1,1,1])).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float)
         };
 
         let (contrast, dissimilarity) = {
@@ -224,12 +224,13 @@ impl GLRLMFeatures{
         let headers = OFFSETS.iter()
             .flat_map(|offset|{
                 let (dx, dy) = offset;
-                GlcmFeatures::FIELD_NAMES_AS_ARRAY.iter()
+                GLRLMFeatures::FIELD_NAMES_AS_ARRAY.iter()
                     .map(move |field_name|format!("{field_name}_{dx}_{dy}"))
             })
             .collect::<Vec<_>>();
         let mut rec = vec!["centroid_x".to_string(), "centroid_y".to_string()];
         rec.extend(headers);
+
         writer.write_record(rec)?;
         Ok(())
     }

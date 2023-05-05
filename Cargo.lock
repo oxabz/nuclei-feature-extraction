@@ -1470,7 +1470,7 @@ dependencies = [
 [[package]]
 name = "tch-utils"
 version = "0.1.0"
-source = "git+https://github.com/oxabz/tch-utils.git#793d0422e03f50599b4dc7fe573d995051cdeb02"
+source = "git+https://github.com/oxabz/tch-utils.git#e8626fffc9604da87a6604b52df87b092949a325"
 dependencies = [
  "image",
  "ndarray",

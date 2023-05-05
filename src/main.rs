@@ -217,7 +217,7 @@ fn glrlm_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::
                 let features = &glrlm_features[i];
                 if err[i] {
                     let len = features.len();
-                    let nan = std::iter::repeat(f32::NAN).take(len * features.as_slice().len()).map(|x|f32::to_string(&x)).collect::<Vec<_>>();
+                    let nan = std::iter::repeat(f32::NAN).take(len * features[0].as_slice().len()).map(|x|f32::to_string(&x)).collect::<Vec<_>>();
                     let mut rec = vec![centroid_x.to_string(), centroid_y.to_string()];
                     rec.extend(nan);
                     if let Err(err) = output.write_record(rec) {
