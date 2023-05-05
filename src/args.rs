@@ -94,7 +94,6 @@ impl Args{
                 error!("Output file already exists : {:?}\nUse --overwrite to overwrite it", self.output);
                 exit(1);
             }
-            exit(1);
         }
     }
 
