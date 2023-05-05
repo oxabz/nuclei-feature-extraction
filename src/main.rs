@@ -66,13 +66,6 @@ fn geometry_main(geometry: geojson::FeatureCollection){
     let patch_size = patch_size as usize;
 
     let output = open_output(&output);
-    if let Err(err) = {
-        let mut output = output.lock().unwrap();
-        ShapeFeatures::write_header_to_csv(output.borrow_mut()) 
-    } {
-        error!("Error while writing to csv : {}", err);
-        exit(1);
-    }
 
     let count = geometry.features.len();
     let done = AtomicU32::new(0);
@@ -107,13 +100,6 @@ fn color_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::
     let patch_size = patch_size as usize;
 
     let output = open_output(&output);
-    if let Err(err) = {
-        let mut output = output.lock().unwrap();
-        ColorFeatures::write_header_to_csv(output.borrow_mut()) 
-    } {
-        error!("Error while writing to csv : {}", err);
-        exit(1);
-    }
 
     let count = geometry.features.len();
     let done = AtomicU32::new(0);
