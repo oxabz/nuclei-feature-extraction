@@ -1,4 +1,4 @@
-use tch::{Tensor, index::*};
+use tch::{Tensor, index::*, Kind};
 
 /**
 Compute the mean and standard deviation of the color channels of the image.
@@ -45,7 +45,7 @@ pub fn circular_mean(image: &Tensor, mask: &Tensor) -> Tensor {
     let cos = cos.sum_dim_intlist(Some(&[-1,-2, -3][..]), false, tch::Kind::Float) / &mask_area;
     let sin = sin.sum_dim_intlist(Some(&[-1,-2, -3][..]), false, tch::Kind::Float) / &mask_area;
     
-    sin.atan2(&cos).rad2deg()
+    sin.atan2(&cos).rad2deg().fmod(360.0)
 }
 
 /**

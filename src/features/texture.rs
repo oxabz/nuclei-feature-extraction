@@ -53,7 +53,7 @@ pub fn glcm_features(patches: &Tensor, masks:&Tensor)->(Vec<Vec<GlcmFeatures>>, 
     let _ = tch::no_grad_guard();
     let batch_size = patches.size()[0];
 
-    let gs = patches.mean_dim(Some(&([-3][..])), true, Kind::Float).unsqueeze(0); // [N, 1, H, W]
+    let gs = patches.mean_dim(Some(&([-3][..])), true, Kind::Float); // [N, 1, H, W]
     let glcms = OFFSETS.iter()
         .map(|offset| glcm(&gs, *offset, GLCM_LEVELS, Some(masks)))
         .collect::<Vec<_>>(); // [N, LEVEL, LEVEL] * 4
