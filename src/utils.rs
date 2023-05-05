@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use log::error;
+use log::{error, debug};
 use openslide::OpenSlide;
 use tch::{Tensor, Device, Kind, index::*};
 use tch_utils::image::ImageTensorExt;
@@ -86,9 +86,6 @@ pub(crate) fn load_slides(
                 let top = (centroid[1] - patch_size as f32 / 2.0) as usize;
                 slide.read_region(top, left, 0, patch_size, patch_size)
             };
-            {
-                patch.as_ref().unwrap().save("test.png").unwrap();
-            }
             match patch {
                 Ok(ok) => {
                     let tensor = Tensor::from_image(ok.into()).i(..3);
@@ -109,8 +106,9 @@ pub(crate) fn load_slides(
         .unzip();
     let (centroids, err): (Vec<_>, Vec<_>) = centroid_err.into_iter().unzip();
     let (patches, masks):(Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
-    let mut patches = Tensor::stack(&patches, 0);
-    let mut masks = Tensor::stack(&masks, 0);
+    let patches = Tensor::stack(&patches, 0);
+    let masks = Tensor::stack(&masks, 0);
+    debug!("patches size {:?}", patches.size());
     (centroids, err, patches, masks)
 }
 
