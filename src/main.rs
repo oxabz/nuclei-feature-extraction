@@ -3,8 +3,7 @@ mod geojson;
 mod utils;
 mod features;
 use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::{AtomicU32}}, process::exit, iter::zip, path::Path, borrow::BorrowMut};
-use csv::StringRecord;
-use features::{ShapeFeatures, color_features, ColorFeatures, texture::{glcm_features, glrlm_features, GLRLMFeatures}};
+use features::{color_features, texture::{glcm_features, glrlm_features, GLRLMFeatures}};
 use log::error;
 use args::{ARGS, Args};
 use rayon::prelude::*;
@@ -146,7 +145,7 @@ fn glcm_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::O
     let done = AtomicU32::new(0);
     geometry.features
         .par_chunks(batch_size)
-        .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
+        .map(|nuclei| utils::load_slides2(nuclei, &ARGS.slide, patch_size))
         .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
         .map(|(centroids, err, patches, masks)|{
             let glcm_features = glcm_features(&patches, &masks);

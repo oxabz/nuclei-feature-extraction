@@ -66,8 +66,8 @@ impl Args{
     pub fn handle_verbose(&self){
         if !self.verbose{return}
         println!("Called Args :");
-        println!("{:#?}", self.feature_set);
-        log::set_max_level(log::LevelFilter::Debug);
+        println!("{:#?}", self);
+        log::set_max_level(log::LevelFilter::Trace);
     }
 
     pub fn handle_thread_count(&self){
