@@ -5,12 +5,15 @@ mod features;
 use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::{AtomicU32}}, process::exit};
 use log::{error, debug};
 use args::{ARGS, Args};
+use openslide_rs::{traits::Slide, Region, Size};
 use polars::prelude::*;
 use rayon::prelude::*;
+use tch::{Tensor, IndexOp};
+use tch_utils::image::ImageTensorExt;
 
 
-fn load_slide()-> openslide::OpenSlide {
-    let slide = openslide::OpenSlide::new(&ARGS.slide).unwrap();
+fn load_slide()-> openslide_rs::OpenSlide {
+    let slide = openslide_rs::OpenSlide::new(&ARGS.slide).unwrap();
     slide
 }
 

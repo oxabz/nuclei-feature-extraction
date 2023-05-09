@@ -33,7 +33,7 @@ impl FeatureSet for GlcmFeatureSet {
             .map(|offset| (*offset, glcm(&gs, *offset, GLCM_LEVELS, Some(masks))))
             .collect::<Vec<_>>(); // [N, LEVEL, LEVEL] * 4
 
-        let mut features = HashMap::with_capacity(14 * OFFSETS.len());
+        let mut features = Vec::with_capacity(14 * OFFSETS.len());
 
         for (offset, glcm) in glcms.iter() {
             // glcm: [N, LEVEL, LEVEL]
@@ -206,56 +206,56 @@ impl FeatureSet for GlcmFeatureSet {
             let information_measure_correlation2 =
                 Vec::<f32>::from(information_measure_correlation2);
 
-            features.insert(
-                format!("correlation_{}_{}", offset.0, offset.0),
+            features.push((
+                format!("correlation_{}_{}", offset.0, offset.1),
                 correlation,
-            );
-            features.insert(format!("contrast_{}_{}", offset.0, offset.0), contrast);
-            features.insert(
-                format!("dissimilarity_{}_{}", offset.0, offset.0),
+            ));
+            features.push((format!("contrast_{}_{}", offset.0, offset.1), contrast));
+            features.push((
+                format!("dissimilarity_{}_{}", offset.0, offset.1),
                 dissimilarity,
-            );
-            features.insert(format!("entropy_{}_{}", offset.0, offset.0), entropy);
-            features.insert(
-                format!("angular_second_moment_{}_{}", offset.0, offset.0),
+            ));
+            features.push((format!("entropy_{}_{}", offset.0, offset.1), entropy));
+            features.push((
+                format!("angular_second_moment_{}_{}", offset.0, offset.1),
                 angular_second_moment,
-            );
-            features.insert(
-                format!("sum_average_{}_{}", offset.0, offset.0),
+            ));
+            features.push((
+                format!("sum_average_{}_{}", offset.0, offset.1),
                 sum_average,
-            );
-            features.insert(
-                format!("sum_variance_{}_{}", offset.0, offset.0),
+            ));
+            features.push((
+                format!("sum_variance_{}_{}", offset.0, offset.1),
                 sum_variance,
-            );
-            features.insert(
-                format!("sum_entropy_{}_{}", offset.0, offset.0),
+            ));
+            features.push((
+                format!("sum_entropy_{}_{}", offset.0, offset.1),
                 sum_entropy,
-            );
-            features.insert(
-                format!("sum_of_squares_{}_{}", offset.0, offset.0),
+            ));
+            features.push((
+                format!("sum_of_squares_{}_{}", offset.0, offset.1),
                 sum_of_squares,
-            );
-            features.insert(
-                format!("inverse_difference_moment_{}_{}", offset.0, offset.0),
+            ));
+            features.push((
+                format!("inverse_difference_moment_{}_{}", offset.0, offset.1),
                 inverse_difference_moment,
-            );
-            features.insert(
-                format!("difference_average_{}_{}", offset.0, offset.0),
+            ));
+            features.push((
+                format!("difference_average_{}_{}", offset.0, offset.1),
                 difference_average,
-            );
-            features.insert(
-                format!("difference_variance_{}_{}", offset.0, offset.0),
+            ));
+            features.push((
+                format!("difference_variance_{}_{}", offset.0, offset.1),
                 difference_variance,
-            );
-            features.insert(
-                format!("information_measure_correlation1_{}_{}", offset.0, offset.0),
+            ));
+            features.push((
+                format!("information_measure_correlation1_{}_{}", offset.0, offset.1),
                 information_measure_correlation1,
-            );
-            features.insert(
-                format!("information_measure_correlation2_{}_{}", offset.0, offset.0),
+            ));
+            features.push((
+                format!("information_measure_correlation2_{}_{}", offset.0, offset.1),
                 information_measure_correlation2,
-            );
+            ));
         }
 
         let features =

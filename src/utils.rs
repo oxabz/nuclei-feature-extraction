@@ -1,8 +1,7 @@
-use std::{sync::{Arc, Mutex}, error::Error, path::Path, io::{BufWriter, Write}};
+use std::{sync::{Arc, Mutex}};
 
-use log::{error, debug};
-use openslide::OpenSlide;
-use polars::prelude::*;
+use log::debug;
+use openslide_rs::{OpenSlide, Region, Size, traits::Slide};
 use tch::{Tensor, Device, Kind, index::*};
 use tch_utils::image::ImageTensorExt;
 
@@ -84,9 +83,15 @@ pub(crate) fn load_slides(
         .filter_map(|(centroid, centered_polygone)|{
             let mask = tch_utils::shapes::polygon(patch_size, patch_size, &centered_polygone.to_tchutils_points(), (Kind::Float, Device::Cpu));
             let patch = {
-                let left = (centroid[0] - patch_size as f32 / 2.0) as usize;
-                let top = (centroid[1] - patch_size as f32 / 2.0) as usize;
-                slide.read_region(top, left, 0, patch_size, patch_size)
+                let region = Region{
+                    size: Size{ w: patch_size as u32, h: patch_size as u32},
+                    level: 0,
+                    address: openslide_rs::Address { 
+                        x: (centroid[0] - patch_size as f32 / 2.0) as u32, 
+                        y: (centroid[1] - patch_size as f32 / 2.0) as u32
+                    },
+                };
+                slide.read_image_rgb(&region)
             };
             match patch {
                 Ok(ok) => {
