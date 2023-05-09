@@ -1,13 +1,22 @@
-mod shape;
 mod color;
+mod shape;
 pub mod texture;
 
 use struct_field_names_as_array::FieldNamesAsArray;
-use tch::{Kind, Tensor, index::*};
+use tch::{index::*, Kind, Tensor};
 
-use crate::{utils::PointsExt, features::color::{circular_mean, circular_std}};
+use crate::{
+    features::color::{circular_mean, circular_std},
+    utils::PointsExt,
+};
 
-use self::{shape::{center_of_mass, major_minor_axes_w_angle, eccentricity, convex_hull, perimeter, area, equivalent_perimeter, compacity, eliptic_deviation, convex_hull_stats}, color::mean_std};
+use self::{
+    color::mean_std,
+    shape::{
+        area, center_of_mass, compacity, convex_hull, convex_hull_stats, eccentricity,
+        eliptic_deviation, equivalent_perimeter, major_minor_axes_w_angle, perimeter,
+    },
+};
 
 /*
  * Added metrics to Medhi's features:
@@ -48,7 +57,7 @@ pub struct ColorFeatures {
     pub(crate) std_r: f32,
     pub(crate) std_g: f32,
     pub(crate) std_b: f32,
-    // HSV 
+    // HSV
     pub(crate) mean_h: f32,
     pub(crate) mean_s: f32,
     pub(crate) mean_v: f32,
@@ -59,12 +68,12 @@ pub struct ColorFeatures {
     pub(crate) mean_haematoxylin: f32,
     pub(crate) mean_eosin: f32,
     pub(crate) mean_dab: f32,
-    pub(crate) std_haematoxylin : f32,
+    pub(crate) std_haematoxylin: f32,
     pub(crate) std_eosin: f32,
-    pub(crate) std_dab: f32, 
+    pub(crate) std_dab: f32,
 }
 impl ColorFeatures {
-    pub(crate) fn set_all_nan(& mut self) {
+    pub(crate) fn set_all_nan(&mut self) {
         self.mean_r = f32::NAN;
         self.mean_g = f32::NAN;
         self.mean_b = f32::NAN;
@@ -89,8 +98,12 @@ impl ColorFeatures {
 pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFeatures {
     let device = mask.device();
     let patch_size = mask.size()[2] as usize;
-    let hull_mask =
-        tch_utils::shapes::convex_hull(patch_size, patch_size, &polygon.to_tchutils_points(), (Kind::Float, device));
+    let hull_mask = tch_utils::shapes::convex_hull(
+        patch_size,
+        patch_size,
+        &polygon.to_tchutils_points(),
+        (Kind::Float, device),
+    );
     let hull = convex_hull(polygon);
 
     let mut centroid = center_of_mass(&mask);
@@ -113,7 +126,8 @@ pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFea
 
     let convex_perimeter = perimeter(&hull);
 
-    let (convex_hull_area, convex_deffect, convex_positive_defect, convex_negative_defect) = convex_hull_stats(&mask, &hull_mask);
+    let (convex_hull_area, convex_deffect, convex_positive_defect, convex_negative_defect) =
+        convex_hull_stats(&mask, &hull_mask);
     let area_ = area(&mask);
     let perimeter = perimeter(&polygon);
     ShapeFeatures {
@@ -136,7 +150,74 @@ pub(crate) fn shape_features(polygon: &Vec<[f32; 2]>, mask: &Tensor) -> ShapeFea
     }
 }
 
-pub fn color_features(patch:&Tensor, mask: &Tensor) -> Vec<ColorFeatures>{
+pub(crate) fn shape_features2(polygons: &Vec<Vec<[f32; 2]>>, masks: &Tensor) -> Vec<ShapeFeatures> {
+    let device = masks.device();
+    let batch_size = masks.size()[0];
+    let patch_size = masks.size()[3] as usize;
+
+    let mut features = Vec::with_capacity(batch_size as usize);
+
+    for i in 0..batch_size {
+        let polygon = &polygons[i as usize];
+        let mask = masks.i(i);
+
+        let hull_mask = tch_utils::shapes::convex_hull(
+            patch_size,
+            patch_size,
+            &polygon.to_tchutils_points(),
+            (Kind::Float, device),
+        );
+
+        let hull = convex_hull(polygon);
+
+        let mut centroid = center_of_mass(&mask);
+        centroid[0] -= patch_size as f32 / 2.0;
+        centroid[1] -= patch_size as f32 / 2.0;
+        let centroid = centroid;
+
+        let (major_axis, minor_axis, angle) = major_minor_axes_w_angle(&mask);
+        let eccentricity = eccentricity(major_axis, minor_axis);
+        let orientation = angle;
+
+        let elipse_mask = tch_utils::shapes::ellipse(
+            patch_size,
+            patch_size,
+            (centroid[0] as f64, centroid[1] as f64),
+            (major_axis as f64 * 2.0, minor_axis as f64 * 2.0),
+            angle as f64,
+            (Kind::Float, device),
+        );
+
+        let convex_perimeter = perimeter(&hull);
+
+        let (convex_hull_area, convex_deffect, convex_positive_defect, convex_negative_defect) =
+            convex_hull_stats(&mask, &hull_mask);
+        let area_ = area(&mask);
+        let perimeter = perimeter(&polygon);
+
+        features.push(ShapeFeatures {
+            area: area_,
+            major_axis,
+            minor_axis,
+            eccentricity,
+            orientation,
+            perimeter,
+            equivalent_perimeter: equivalent_perimeter(area_),
+            compacity: compacity(area_, perimeter),
+            eliptic_deviation: eliptic_deviation(&mask, &elipse_mask),
+            convex_hull_area,
+            convex_deffect,
+            convex_positive_defect,
+            convex_negative_defect,
+            convex_perimeter,
+            centroid_x: 0.0,
+            centroid_y: 0.0,
+        });
+    }
+    features
+}
+
+pub fn color_features(patch: &Tensor, mask: &Tensor) -> Vec<ColorFeatures> {
     let _ = tch::no_grad_guard();
     let hsv = tch_utils::color::hsv_from_rgb(patch);
     let hed = tch_utils::color::hed_from_rgb(patch);
@@ -147,7 +228,7 @@ pub fn color_features(patch:&Tensor, mask: &Tensor) -> Vec<ColorFeatures>{
     let h = hsv.select(-3, 0);
     let mean_h = circular_mean(&h, &mask);
     let std_h = circular_std(&h, &mask, &mean_h);
-    
+
     let batch_size = patch.size()[0];
     let mut features = Vec::with_capacity(batch_size as usize);
     for i in 0..batch_size {
@@ -173,8 +254,8 @@ pub fn color_features(patch:&Tensor, mask: &Tensor) -> Vec<ColorFeatures>{
         let std_h = f32::from(std_h.i(0));
 
         features.push(ColorFeatures {
-            centroid_x:0.0,
-            centroid_y:0.0,
+            centroid_x: 0.0,
+            centroid_y: 0.0,
             mean_r,
             mean_g,
             mean_b,

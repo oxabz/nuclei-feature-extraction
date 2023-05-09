@@ -5,6 +5,7 @@ Contains the shape features computation functions.
 use tch::{Tensor, index::*};
 
 
+
 pub(crate) fn area(mask: &Tensor) -> f32 {
     f32::from(mask.sum(tch::Kind::Float))
 }
