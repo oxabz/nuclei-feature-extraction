@@ -2,6 +2,8 @@ use std::{path::PathBuf, process::exit};
 use clap::Parser;
 use log::error;
 
+use crate::features;
+
 #[derive(Clone, Debug)]
 pub enum FeatureSet{
     Geometry, 
@@ -9,6 +11,7 @@ pub enum FeatureSet{
     Glcm,
     Glrlm,
     Gabor,
+    Texture,
     All,
 }
 
@@ -21,15 +24,41 @@ impl std::str::FromStr for FeatureSet{
             "glcm" => Ok(FeatureSet::Glcm),
             "glrlm" => Ok(FeatureSet::Glrlm),
             "gabor" => Ok(FeatureSet::Gabor),
+            "texture" => Ok(FeatureSet::Texture),
             "all" => Ok(FeatureSet::All),
             _ => Err(format!("{} is not a valid feature set", s)),
         }
     }
 }
 
+impl FeatureSet{
+    pub fn flat(s:&Vec<Self>)->Vec<Self>{
+        s.iter().flat_map(
+            |fs|{
+                match fs {
+                    FeatureSet::All => vec![
+                        FeatureSet::Geometry,
+                        FeatureSet::Color,
+                        FeatureSet::Glcm,
+                        FeatureSet::Glrlm,
+                        FeatureSet::Gabor,
+                        FeatureSet::Texture,
+                    ],
+                    FeatureSet::Texture => vec![
+                        FeatureSet::Glcm,
+                        FeatureSet::Glrlm,
+                        FeatureSet::Gabor,
+                    ],
+                    fs => vec![fs]
+                }
+            }
+        ).collect()
+    }
+}
+
 #[derive(Debug, Parser, Clone)]
 pub struct Args{
-    /// Feature set to extract
+    /// Feature sets to extract
     pub feature_set: FeatureSet,
     /// Input geometry file (.geojson)
     pub geometry: PathBuf,

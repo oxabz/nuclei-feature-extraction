@@ -19,7 +19,7 @@ use self::{
     },
 };
 
-pub(crate) trait FeatureSet {
+pub(crate) trait FeatureSet where Self: Sized {
     fn compute_features_batched(centroids: &Vec<[f32; 2]>, polygons: &Vec<Vec<[f32; 2]>>, patchs: &Tensor, masks: &Tensor) -> DataFrame;
 }
 
