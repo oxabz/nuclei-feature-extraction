@@ -29,7 +29,3 @@ tch-utils = {git="https://github.com/oxabz/tch-utils.git"}
 struct-field-names-as-array = "0.2"
 lazy_static = "1.4"
 pretty_env_logger = "0.4"
-
-[patch.crates-io]
-# Using a patched version of openslide-rust that makes it possible to send the openslide object between threads
-openslide = { git = "https://github.com/oxabz/openslide-rust.git", branch="send" }
