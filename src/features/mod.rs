@@ -2,6 +2,7 @@ mod color;
 mod shape;
 pub mod texture;
 
+use polars::prelude::DataFrame;
 use struct_field_names_as_array::FieldNamesAsArray;
 use tch::{index::*, Kind, Tensor};
 
@@ -17,6 +18,10 @@ use self::{
         eliptic_deviation, equivalent_perimeter, major_minor_axes_w_angle, perimeter,
     },
 };
+
+pub(crate) trait FeatureSet {
+    fn compute_features_batched(centroids: &Vec<[f32; 2]>, polygons: &Vec<Vec<[f32; 2]>>, patchs: &Tensor, masks: &Tensor) -> DataFrame;
+}
 
 /*
  * Added metrics to Medhi's features:
