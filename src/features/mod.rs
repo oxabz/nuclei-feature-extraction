@@ -2,14 +2,12 @@ mod shape;
 mod color;
 pub mod texture;
 
-use std::io;
-
 use struct_field_names_as_array::FieldNamesAsArray;
 use tch::{Kind, Tensor, index::*};
 
 use crate::{utils::PointsExt, features::color::{circular_mean, circular_std}};
 
-use self::{shape::{center_of_mass, major_minor_axes_w_angle, eccentricity, convex_hull, perimeter, area, equivalent_perimeter, compacity, eliptic_deviation, convex_hull_stats}, color::mean_std, texture::{GlcmFeatures, glcm_features}};
+use self::{shape::{center_of_mass, major_minor_axes_w_angle, eccentricity, convex_hull, perimeter, area, equivalent_perimeter, compacity, eliptic_deviation, convex_hull_stats}, color::mean_std};
 
 /*
  * Added metrics to Medhi's features:
@@ -37,13 +35,6 @@ pub(crate) struct ShapeFeatures {
     pub(crate) convex_negative_defect: f32,
     pub(crate) convex_perimeter: f32,
     pub(crate) compacity: f32,
-}
-
-impl ShapeFeatures{
-    pub fn write_header_to_csv<W: io::Write>(writer: &mut csv::Writer<W>) -> Result<(), csv::Error> {
-        writer.write_record(Self::FIELD_NAMES_AS_ARRAY)?;
-        Ok(())
-    }
 }
 
 #[derive(Debug, serde::Serialize, FieldNamesAsArray)]
@@ -92,11 +83,6 @@ impl ColorFeatures {
         self.std_haematoxylin = f32::NAN;
         self.std_eosin = f32::NAN;
         self.std_dab = f32::NAN;
-    }
-
-    pub fn write_header_to_csv<W: io::Write>(writer: &mut csv::Writer<W>) -> Result<(), csv::Error> {
-        writer.write_record(Self::FIELD_NAMES_AS_ARRAY)?;
-        Ok(())
     }
 }
 

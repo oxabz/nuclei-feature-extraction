@@ -1,4 +1,4 @@
-use tch::{Tensor, index::*, Kind};
+use tch::{Tensor};
 
 /**
 Compute the mean and standard deviation of the color channels of the image.

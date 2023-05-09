@@ -71,10 +71,6 @@ pub fn glcm_features(patches: &Tensor, masks:&Tensor)->(Vec<Vec<GlcmFeatures>>, 
         let intensity_x = (&levels * &px).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
         let intensity_y = (&levels * &py).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
 
-        let std_x = px.std_dim(Some(&[-1][..]), true, false); // [N]
-        let std_y = py.std_dim(Some(&[-1][..]), true, false); // [N]
-
-        
         let (pxpy, pxdy) = { // [N, LEVEL * 2 - 2], [N, LEVEL]
             let pxpy = Tensor::zeros(&[batch_size, GLCM_LEVELS as i64 * 2 - 2], (Kind::Float, patches.device())); // [N, LEVEL * 2 - 2]
             let pxdy = Tensor::zeros(&[batch_size, GLCM_LEVELS as i64], (Kind::Float, patches.device())); // [N, LEVEL]
@@ -262,12 +258,6 @@ pub fn glrlm_features(patches: &Tensor, masks:&Tensor) -> Vec<Vec<GLRLMFeatures>
         // Number of runs [N]
         let nruns = glrlm.sum_dim_intlist(Some(&[-1,-2][..]), false, Kind::Float);
 
-        // Gray Level Run-Length Pixel Number Matrix [N, GLRLM_LEVELS, GLRLM_MAX_LENGTH]
-        let glrlpnm = {
-            let j = Tensor::arange(GLRLM_MAX_LENGTH, (Kind::Float, patches.device())).view([1,1,-1]) + 1.0;
-            &glrlm * j
-        };
-
         // Gray Level Run-Length Vector [N, GLRLM_LEVELS]
         let glrlv = {
             glrlm.sum_dim_intlist(Some(&[-1][..]), false, Kind::Float)
@@ -277,9 +267,6 @@ pub fn glrlm_features(patches: &Tensor, masks:&Tensor) -> Vec<Vec<GLRLMFeatures>
         let rlrnv = {
             glrlm.sum_dim_intlist(Some(&[-2][..]), false, Kind::Float)
         };
-
-        // Gray-Level Run-Length-One Vector [N, GLRLM_LEVELS]
-        let glrl1v = glrlm.select(-1, 0);
 
         // Short Run Emphasis [N] & Long Run Emphasis [N]
         let (short_run_emphasis, long_run_emphasis) = {
@@ -310,7 +297,7 @@ pub fn glrlm_features(patches: &Tensor, masks:&Tensor) -> Vec<Vec<GLRLMFeatures>
 
         // Low Gray-Level Run Emphasis [N] & High Gray-Level Run Emphasis [N]
         let (low_gray_level_run_emphasis, high_gray_level_run_emphasis) = {
-            let i = Tensor::arange(GLRLM_LEVELS as i64, (Kind::Float, patches.device())).unsqueeze(0);
+            let i = Tensor::arange(GLRLM_LEVELS as i64, (Kind::Float, patches.device())).unsqueeze(0) + 0.5;
             let lglre = &glrlv / i.square();
             let hglre = &glrlv * i.square();
             (
@@ -335,14 +322,14 @@ pub fn glrlm_features(patches: &Tensor, masks:&Tensor) -> Vec<Vec<GLRLMFeatures>
             let j = Tensor::arange(GLRLM_MAX_LENGTH, (Kind::Float, patches.device())) + 1.0;
             let j = j.view([1,1,-1]);
             let j2 = j.square();
-            let i = Tensor::arange(GLRLM_LEVELS as i64, (Kind::Float, patches.device()));
+            let i = Tensor::arange(GLRLM_LEVELS as i64, (Kind::Float, patches.device())) + 0.5;
             let i = i.view([1,-1,1]);
             let i2 = i.square();
             let srlgle = &glrlm / (&i2 * &j2);
             let srhgle = &glrlm * &i2 / &j2;
             let lrlgle = &glrlm * &j2 / &i2;
             let lrhgle = &glrlm * i2 * &j2;
-            let i = Tensor::arange(GLRLM_LEVELS as i64, (Kind::Float, patches.device())) - GLRLM_LEVELS as f64 / 2.0;
+            let i = Tensor::arange(GLRLM_LEVELS as i64, (Kind::Float, patches.device())) - GLRLM_LEVELS as f64 / 2.0 + 0.5;
             let i = i.view([1, -1, 1]);
             let i2 = i.square();
             let srmgle = &glrlm / (&i2 * &j2);

@@ -1,4 +1,4 @@
-use std::{sync::{Arc, Mutex}, path::Path};
+use std::sync::{Arc, Mutex};
 
 use log::{error, debug};
 use openslide::OpenSlide;
@@ -112,52 +112,6 @@ pub(crate) fn load_slides(
     debug!("Loaded {} patch in {:?}", patches.size()[0], start.elapsed());
     (centroids, err, patches, masks)
 }
-
-/**
-Takes a chunk of geojson features and returns a tuple of tensors containing the patches and the masks
- */
-pub(crate) fn load_slides2(
-    features:&[geojson::Feature], 
-    slide: &Path, 
-    patch_size: usize
-    ) -> (Vec<[f32;2]>, Vec<bool>, Tensor, Tensor){
-    let start = std::time::Instant::now();
-    let slide = OpenSlide::new(slide).unwrap();
-    let (centroid_err, patch_mask) : (Vec<_>, Vec<_>) = features.into_iter()
-        .map(preprocess_polygon)
-        .map(|(centroid, centered_polygone)|{
-            let mask = tch_utils::shapes::polygon(patch_size, patch_size, &centered_polygone.to_tchutils_points(), (Kind::Float, Device::Cpu));
-            let patch = {
-                let left = (centroid[0] - patch_size as f32 / 2.0) as usize;
-                let top = (centroid[1] - patch_size as f32 / 2.0) as usize;
-                slide.read_region(top, left, 0, patch_size, patch_size)
-            };
-            match patch {
-                Ok(ok) => {
-                    let tensor = Tensor::from_image(ok.into()).i(..3);
-                    if tensor.size().as_slice() != &[3, patch_size as i64, patch_size as i64] {
-                        let padded = Tensor::zeros(&[3, patch_size as i64, patch_size as i64], (Kind::Float, Device::Cpu));
-                        padded.i((..tensor.size()[0], ..tensor.size()[1], ..tensor.size()[2])).copy_(&tensor);
-                        ((centroid, false), (padded, mask))
-                    } else {
-                        ((centroid, false), (tensor, mask))
-                    }
-                },
-                Err(err) => {
-                    error!("Error while reading patch for nuclei {centroid:?} : {}", err);
-                    ((centroid, true), (Tensor::ones(&[3, patch_size as i64, patch_size as i64], (Kind::Float, Device::Cpu)), mask))
-                },
-            }
-        })
-        .unzip();
-    let (centroids, err): (Vec<_>, Vec<_>) = centroid_err.into_iter().unzip();
-    let (patches, masks):(Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
-    let patches = Tensor::stack(&patches, 0);
-    let masks = Tensor::stack(&masks, 0);
-    debug!("Loaded {} patch in {:?}", patches.size()[0], start.elapsed());
-    (centroids, err, patches, masks)
-}
-
 
 pub(crate) fn move_tensors_to_device((centroid, err, mut patches, mut masks):(Vec<[f32;2]>, Vec<bool>, Tensor, Tensor), gpus: Option<Vec<usize>>) -> (Vec<[f32;2]>, Vec<bool>, Tensor, Tensor){
     if let Some (gpus) = &gpus {
