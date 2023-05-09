@@ -19,9 +19,17 @@ use self::{
     },
 };
 
-pub(crate) trait FeatureSet where Self: Sized {
-    fn compute_features_batched(centroids: &Vec<[f32; 2]>, polygons: &Vec<Vec<[f32; 2]>>, patchs: &Tensor, masks: &Tensor) -> DataFrame;
+pub trait FeatureSet : Send + Sync {
+    fn name(&self)->&str;
+
+    fn compute_features_batched(&self, centroids: &Vec<[f32; 2]>, polygons: &Vec<Vec<[f32; 2]>>, patchs: &Tensor, masks: &Tensor) -> DataFrame;
 }
+
+pub use color::ColorFeatureSet;
+pub use shape::ShapeFeatureSet;
+pub use texture::GlcmFeatureSet;
+pub use texture::GLRLMFeatureSet;
+pub use texture::GaborFilterFeatureSet;
 
 /*
  * Added metrics to Medhi's features:

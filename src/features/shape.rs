@@ -9,10 +9,11 @@ use crate::utils::{PointsExt, centroids_to_key_strings};
 
 use super::FeatureSet;
 
-pub(crate) struct ShapeFeatureSet;
+pub struct ShapeFeatureSet;
 
 impl FeatureSet for ShapeFeatureSet {
     fn compute_features_batched(
+        &self,
         centroids: &Vec<[f32; 2]>,
         polygons: &Vec<Vec<[f32; 2]>>,
         patchs: &Tensor,
@@ -117,6 +118,10 @@ impl FeatureSet for ShapeFeatureSet {
             "convex_negative_defect" => lconvex_negative_defect,
             "convex_perimeter" => lconvex_perimeter,
         ).expect("Couldnt create the dataframe")
+    }
+
+    fn name(&self)->&str {
+        "geometry"
     }
 }
 

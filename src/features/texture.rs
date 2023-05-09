@@ -18,6 +18,7 @@ pub struct GlcmFeatureSet;
 
 impl FeatureSet for GlcmFeatureSet {
     fn compute_features_batched(
+        &self,
         centroids: &Vec<[f32; 2]>,
         _polygons: &Vec<Vec<[f32; 2]>>,
         patchs: &Tensor,
@@ -263,6 +264,10 @@ impl FeatureSet for GlcmFeatureSet {
                 .collect::<Vec<_>>();
 
         DataFrame::new(features).unwrap()
+    }
+
+    fn name(&self)->&str {
+        "GLCM"
     }
 }
 
@@ -525,6 +530,7 @@ pub struct GLRLMFeatureSet;
 
 impl FeatureSet for GLRLMFeatureSet {
     fn compute_features_batched(
+        &self,
         centroids: &Vec<[f32; 2]>,
         _polygons: &Vec<Vec<[f32; 2]>>,
         patchs: &Tensor,
@@ -746,6 +752,10 @@ impl FeatureSet for GLRLMFeatureSet {
 
         DataFrame::new(features).unwrap()
     }
+
+    fn name(&self)->&str {
+        "GLRLM"
+    }
 }
 
 #[derive(Debug, Clone, FieldNamesAsArray)]
@@ -966,6 +976,7 @@ pub struct GaborFilterFeatureSet;
 
 impl FeatureSet for GaborFilterFeatureSet {
     fn compute_features_batched(
+        &self,
         centroids: &Vec<[f32; 2]>,
         polygons: &Vec<Vec<[f32; 2]>>,
         patchs: &Tensor,
@@ -1010,6 +1021,10 @@ impl FeatureSet for GaborFilterFeatureSet {
                 .collect::<Vec<_>>();
         
         DataFrame::new(features).unwrap()
+    }
+
+    fn name(&self)->&str {
+        "gabor filter"
     }
 }
 

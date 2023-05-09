@@ -8,7 +8,7 @@ use super::FeatureSet;
 pub struct ColorFeatureSet;
 
 impl FeatureSet for ColorFeatureSet{
-    fn compute_features_batched(centroids: &Vec<[f32; 2]>, polygons: &Vec<Vec<[f32; 2]>>, patchs: &Tensor, masks: &Tensor) -> polars::prelude::DataFrame {
+    fn compute_features_batched(&self, centroids: &Vec<[f32; 2]>, polygons: &Vec<Vec<[f32; 2]>>, patchs: &Tensor, masks: &Tensor) -> polars::prelude::DataFrame {
         assert!(patchs.size().len() == 4, "The patchs tensor must be 4 dimensional");
         assert!(masks.size().len() == 4, "The masks tensor must be 4 dimensional");
         assert!(patchs.size()[1] == 3, "The patchs tensor must have 3 channels");
@@ -74,6 +74,10 @@ impl FeatureSet for ColorFeatureSet{
             "std_eosin" => std_eosin,
             "std_dab" => std_dab,
         ).expect("Could not create the dataframe")
+    }
+
+    fn name(&self)->&str {
+        "color"
     }
 }
 
