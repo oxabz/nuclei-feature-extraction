@@ -402,3 +402,77 @@ pub fn glrlm_features(patches: &Tensor, masks:&Tensor) -> Vec<Vec<GLRLMFeatures>
 
     glrlms
 }
+
+pub struct GaborFilterFeature{
+    pub angle: f32,
+    pub frequency: f32,
+    pub mean: f32,
+    pub variance: f32,
+}
+
+impl GaborFilterFeature{
+    pub fn get_headers()->Vec<String>{
+        let mut headers = Vec::with_capacity(ANGLES_COUNT * FREQUENCIES.len() * 2 + 2);
+        headers.push("centroid_x".to_string());
+        headers.push("centroid_y".to_string());
+        for angle in 0..ANGLES_COUNT{
+            for frequency in 0..FREQUENCIES.len(){
+                headers.push(format!("gabor_angle_{}_frequency_{}_mean", angle, FREQUENCIES[frequency]));
+                headers.push(format!("gabor_angle_{}_frequency_{}_variance", angle, FREQUENCIES[frequency]));
+            }
+        }
+        headers
+    }
+
+    pub fn as_record(features:&[GaborFilterFeature])->Vec<String>{
+        let mut record = Vec::with_capacity(ANGLES_COUNT * FREQUENCIES.len() * 2);
+        for feature in features{
+            record.push(feature.mean.to_string());
+            record.push(feature.variance.to_string());
+        }
+        record
+    }
+
+    pub fn record_length() -> usize{
+        ANGLES_COUNT * FREQUENCIES.len() * 2
+    }
+}
+
+const ANGLES_COUNT: usize = 8;
+const FREQUENCIES: [f64; 6] = [0.5, 1.0, 2.0, 4.0, 6.0, 8.0];
+
+pub fn gabor_filter_features(patches: &Tensor, masks:&Tensor) -> Vec<Vec<GaborFilterFeature>>{
+    let _ = tch::no_grad_guard();
+
+    let gs = patches.mean_dim(Some(&[-3][..]), true, Kind::Float);
+    let filtered = tch_utils::gabor::apply_gabor_filter(&gs, ANGLES_COUNT, 30, &FREQUENCIES, 0.45);
+
+    let batch_size = patches.size()[0];
+    let filter_count = ANGLES_COUNT * FREQUENCIES.len();
+    
+    let mut features = Vec::with_capacity(batch_size as usize);
+    for _ in 0..batch_size{
+        features.push(Vec::with_capacity(filter_count));
+    }
+
+    let masks_areas = masks.sum_dims([-3,-2,-1]);
+    let mean = (&filtered * masks).sum_dims([-2, -1]) / &masks_areas.unsqueeze(-1);
+    let variance = ((filtered - mean.view([batch_size, filter_count as i64, 1, 1])).square() * masks).sum_dims([-2, -1]) / masks_areas.unsqueeze(-1);
+
+    for i in 0..batch_size{
+        for j in 0..filter_count{
+            let mean = mean.i((i, j as i64));
+            let variance = variance.i((i, j as i64));
+            let angle = (j / FREQUENCIES.len()) as f32 * 45.0;
+            let frequency = FREQUENCIES[j % FREQUENCIES.len()] as f32;
+            features[i as usize].push(GaborFilterFeature{
+                angle,
+                frequency,
+                mean:f32::from(mean),
+                variance:f32::from(variance),
+            });
+        }
+    }
+
+    features
+}

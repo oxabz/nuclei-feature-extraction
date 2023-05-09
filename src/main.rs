@@ -3,14 +3,14 @@ mod geojson;
 mod utils;
 mod features;
 use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::{AtomicU32}}, process::exit, iter::zip, path::Path, borrow::BorrowMut};
-use features::{color_features, texture::{glcm_features, glrlm_features, GLRLMFeatures}};
+use features::{color_features, texture::{glcm_features, glrlm_features, GLRLMFeatures, GaborFilterFeature}};
 use log::{error, debug};
 use args::{ARGS, Args};
 use rayon::prelude::*;
 use tch::{Kind, Device};
 use utils::{PointsExt, preprocess_polygon};
 
-use crate::features::texture::GlcmFeatures;
+use crate::features::texture::{GlcmFeatures, gabor_filter_features};
 
 
 fn load_slide()-> openslide::OpenSlide {
@@ -53,6 +53,8 @@ fn main(){
         args::FeatureSet::Color => color_main(geometry, slide),
         args::FeatureSet::Glcm => glcm_main(geometry, slide),
         args::FeatureSet::Glrlm => glrlm_main(geometry, slide),
+        args::FeatureSet::Gabor => gabor_main(geometry, slide),
+        args::FeatureSet::All => todo!(),
     }
 }
 
@@ -233,4 +235,56 @@ fn glrlm_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::
             }
             println!("{} / {}", done, count);
         });
+}
+
+fn gabor_main(geometry: geojson::FeatureCollection, slide: Arc<Mutex<openslide::OpenSlide>>){
+    let Args {  output, patch_size, gpus, batch_size, .. } = ARGS.clone();
+    let patch_size = patch_size as usize;
+
+    let output = open_output(&output);
+    if let Err(err) = {
+        let mut output = output.lock().unwrap();
+        output.write_record(GaborFilterFeature::get_headers())
+    } {
+        error!("Error while writing to csv : {}", err);
+        exit(1);
+    }
+
+    let count = geometry.features.len();
+    let done = AtomicU32::new(0);
+    geometry.features
+        .par_chunks(batch_size)
+        .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
+        .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
+        .map(|(centroids, err, patches, masks)|{
+            let start = std::time::Instant::now();
+            let glrlm_features = gabor_filter_features(&patches, &masks);
+            debug!("Computed gabor filters features for {} patches in {:?}", centroids.len(), start.elapsed());
+            (centroids, err, glrlm_features)
+        })
+        .for_each(|(centroids, err, glrlm_features)|{
+            let mut output = output.lock().unwrap();
+            
+            let done = done.fetch_add(glrlm_features.len() as u32, std::sync::atomic::Ordering::Relaxed);
+            for (i, centroid) in centroids.iter().enumerate(){
+                let [centroid_x, centroid_y] = centroid;
+                let features = &glrlm_features[i];
+                if err[i] {
+                    let nan = std::iter::repeat(f32::NAN).take(GaborFilterFeature::record_length()).map(|x|f32::to_string(&x)).collect::<Vec<_>>();
+                    let mut rec = vec![centroid_x.to_string(), centroid_y.to_string()];
+                    rec.extend(nan);
+                    if let Err(err) = output.write_record(rec) {
+                        error!("Error while writing to csv : {}", err);
+                    };
+                }
+                let features = GaborFilterFeature::as_record(features);
+                let mut rec = vec![centroid_x.to_string(), centroid_y.to_string()];
+                rec.extend(features);
+                if let Err(err) = output.write_record(rec) {
+                    error!("Error while writing to csv : {}", err);
+                };
+            }
+            println!("{} / {}", done, count);
+        });
+
 }

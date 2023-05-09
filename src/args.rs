@@ -8,16 +8,20 @@ pub enum FeatureSet{
     Color,
     Glcm,
     Glrlm,
+    Gabor,
+    All,
 }
 
 impl std::str::FromStr for FeatureSet{
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s.to_lowercase().as_str() {
             "geometry" => Ok(FeatureSet::Geometry),
             "color" => Ok(FeatureSet::Color),
             "glcm" => Ok(FeatureSet::Glcm),
             "glrlm" => Ok(FeatureSet::Glrlm),
+            "gabor" => Ok(FeatureSet::Gabor),
+            "all" => Ok(FeatureSet::All),
             _ => Err(format!("{} is not a valid feature set", s)),
         }
     }
