@@ -101,7 +101,6 @@ pub(crate) fn load_slides(
                         padded.i((..tensor.size()[0], ..tensor.size()[1], ..tensor.size()[2])).copy_(&tensor);
                         tensor = padded;
                     }
-                    println!("4");
                     Some(((centroid, centered_polygone), (tensor, mask)))
                 },
                 Err(_) => {
