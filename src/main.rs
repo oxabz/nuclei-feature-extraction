@@ -3,7 +3,7 @@ mod geojson;
 mod utils;
 mod features;
 use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::{AtomicU32}}, process::exit};
-use log::{error, debug};
+use log::{error, debug, info};
 use args::{ARGS, Args};
 use polars::prelude::*;
 use rayon::prelude::*;
@@ -22,14 +22,17 @@ fn load_geometry() -> geojson::FeatureCollection{
 
 fn main(){
     // Preping the environment
-    pretty_env_logger::init();
     ARGS.handle_verbose();
+    pretty_env_logger::init();
     ARGS.validate_paths();
     ARGS.validate_gpu();
     ARGS.handle_thread_count();
 
     // Loading the json file containing the geometry
+    info!("Loading the geojson");
+    let start = std::time::Instant::now();
     let geometry = load_geometry();
+    debug!("Loaded geojson in {:?}", start.elapsed());
 
     // Loading the slide
     let slide = load_slide();
@@ -42,6 +45,7 @@ fn main(){
 
     let output_df = Arc::new(Mutex::new(None));
 
+    info!("Extracting features");
     let count = geometry.features.len();
     let done = AtomicU32::new(0);
     geometry.features
@@ -83,7 +87,7 @@ fn main(){
                 output_df.vstack_mut(&features).unwrap();
             }
             let done = done.fetch_add(height as u32, std::sync::atomic::Ordering::Relaxed);
-            println!("{} / {}", done, count);
+            info!("{} / {}", done + height, count);
         });
 
     let mut output_df = output_df.lock().unwrap().take().unwrap();

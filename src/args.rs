@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::error;
-use std::{path::PathBuf, process::exit};
+use std::{path::PathBuf, process::exit, env};
 
 use crate::features;
 
@@ -114,12 +114,15 @@ pub struct Args {
 
 impl Args {
     pub fn handle_verbose(&self) {
+        if env::var("RUST_LOG").is_err() {
+            env::set_var("RUST_LOG", "info")
+        }
         if !self.verbose {
             return;
         }
         println!("Called Args :");
         println!("{:#?}", self);
-        log::set_max_level(log::LevelFilter::Trace);
+        env::set_var("RUST_LOG", "debug");
     }
 
     pub fn handle_thread_count(&self) {
