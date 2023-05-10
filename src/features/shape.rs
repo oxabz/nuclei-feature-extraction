@@ -143,6 +143,10 @@ pub(crate) fn major_minor_axes_w_angle(mask: &Tensor) -> (f32, f32, f32) {
     let nz = mask.squeeze().nonzero();
     let centroid = nz.mean_dim(Some(vec![0].as_slice()), false, tch::Kind::Float);
 
+    if centroid.size()[0] == 0 {
+        return (f32::NAN, f32::NAN, f32::NAN);
+    }
+
     let points = nz - centroid;
     let cov = points.transpose(0, 1).mm(&points) / points.size()[0];
 
