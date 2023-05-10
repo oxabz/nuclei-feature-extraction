@@ -76,6 +76,7 @@ pub(crate) fn load_slides(
     slide: Arc<Mutex<OpenSlide>>, 
     patch_size: usize
     ) -> (Vec<[f32;2]>, Vec<Vec<[f32;2]>>, Tensor, Tensor){
+    print!(""); // Ghostly interaction
     let slide = slide.lock().unwrap();
     let start = std::time::Instant::now();
     let (centroid_poly, patch_mask) : (Vec<_>, Vec<_>) = features.into_iter()
