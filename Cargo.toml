@@ -23,7 +23,7 @@ polars = { version = "0.29", features = ["json", "parquet", "ipc"] }
 rayon = "1.6.1"
 image = "0.24"
 tch = "0.11"
-tch-utils = {git="https://github.com/oxabz/tch-utils.git"}
+tch-utils = {git="https://github.com/oxabz/tch-utils.git", default-features = false, features=["image"]}
 # Misc
 lazy_static = "1.4"
 pretty_env_logger = "0.4"
