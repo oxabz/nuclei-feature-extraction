@@ -628,27 +628,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "csv"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b015497079b9a9d69c02ad25de6c0a6edef051ea6360a327d0bd05802ef64ad"
-dependencies = [
- "csv-core",
- "itoa",
- "ryu",
- "serde",
-]
-
-[[package]]
-name = "csv-core"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b2466559f260f48ad25fe6317b3c8dac77b5bdb5763ac7d9d6103530663bc90"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "cxx"
 version = "1.0.94"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1554,7 +1533,6 @@ name = "nuclei-feature-extraction"
 version = "0.1.0"
 dependencies = [
  "clap",
- "csv",
  "image",
  "lazy_static",
  "log",
@@ -1564,7 +1542,6 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "struct-field-names-as-array",
  "tch",
  "tch-utils",
 ]
@@ -2608,17 +2585,6 @@ name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
-
-[[package]]
-name = "struct-field-names-as-array"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e14f2d334b35cee06f2a5c3a9a649b6a51a098dde075241509af29eea89a8627"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "strum"

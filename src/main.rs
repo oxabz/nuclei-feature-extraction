@@ -5,12 +5,8 @@ mod features;
 use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::{AtomicU32}}, process::exit};
 use log::{error, debug};
 use args::{ARGS, Args};
-use openslide_rs::{traits::Slide, Region, Size};
 use polars::prelude::*;
 use rayon::prelude::*;
-use tch::{Tensor, IndexOp};
-use tch_utils::image::ImageTensorExt;
-
 
 fn load_slide()-> openslide_rs::OpenSlide {
     let slide = openslide_rs::OpenSlide::new(&ARGS.slide).unwrap();
@@ -55,13 +51,27 @@ fn main(){
         .map(|(centroids, polygones, patches, masks)|{
             let features = feature_sets.iter()
                 .map(|fs|{
+                    debug!("Computing {} features for {} patches", fs.name(), centroids.len());
                     let start = std::time::Instant::now();
                     let features = fs.compute_features_batched(&centroids, &polygones, &patches, &masks);
                     debug!("Computed {} features for {} patches in {:?}", fs.name(), centroids.len(), start.elapsed());
                     features
                 })
-                .reduce(|a, b| a.join(&b, ["centroid"], ["centroid"], polars::prelude::JoinType::Inner, None).unwrap());
-            features.unwrap()
+                .collect::<Vec<_>>();
+
+            let centroids = features[0].column("centroid").unwrap().clone();
+            features.iter().for_each(|df|assert!(df.column("centroid").unwrap().eq(&centroids)));
+            let features = std::iter::once(centroids)
+                .chain(
+                    features.into_iter()
+                        .map(|df|df.drop("centroid").unwrap())
+                        .flat_map(|df| df.iter().cloned().collect::<Vec<_>>())
+                )
+                .collect::<Vec<_>>();
+
+            let features = DataFrame::new(features).unwrap();
+
+            features
         })
         .for_each(|features|{
             let height = features.height();
@@ -107,4 +117,5 @@ fn main(){
             exit(1);
         }
     }
+
 }
