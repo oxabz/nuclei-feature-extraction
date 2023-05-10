@@ -87,7 +87,7 @@ fn main(){
                 output_df.vstack_mut(&features).unwrap();
             }
             let done = done.fetch_add(height as u32, std::sync::atomic::Ordering::Relaxed);
-            info!("{} / {}", done + height, count);
+            info!("{} / {}", done + height as u32, count);
         });
 
     let mut output_df = output_df.lock().unwrap().take().unwrap();
