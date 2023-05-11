@@ -2,6 +2,7 @@
 Contains the shape features computation functions.
  */
 
+use log::{error};
 use polars::prelude::*;
 use tch::{index::*, Tensor, Kind};
 
@@ -149,6 +150,21 @@ pub(crate) fn major_minor_axes_w_angle(mask: &Tensor) -> (f32, f32, f32) {
 
     let points = nz - centroid;
     let cov = points.transpose(0, 1).mm(&points) / points.size()[0];
+
+    if bool::from(cov.isnan().any()) {
+        error!("Covariance matrix contains NaN for mask: (dim:{:?}, sum:{})", mask.size(), f32::from(mask.sum(tch::Kind::Float)));
+        return (f32::NAN, f32::NAN, f32::NAN);
+    }
+
+    if cov.size()[0] != 2 || cov.size()[1] != 2 {
+        error!("Covariance matrix is not 2x2 for mask: (dim:{:?}, sum:{})", mask.size(), f32::from(mask.sum(tch::Kind::Float)));
+        return (f32::NAN, f32::NAN, f32::NAN);
+    }
+
+    if bool::from(cov.isinf().any()) {
+        error!("Covariance matrix contains Inf for mask: (dim:{:?}, sum:{})", mask.size(), f32::from(mask.sum(tch::Kind::Float)));
+        return (f32::NAN, f32::NAN, f32::NAN);
+    }
 
     let (eigenvalues, eigenvector) = cov.linalg_eig();
 
