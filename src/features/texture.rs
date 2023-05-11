@@ -28,7 +28,7 @@ impl FeatureSet for GlcmFeatureSet {
         let gs = patchs.mean_dim(Some(&([-3][..])), true, Kind::Float); // [N, 1, H, W]
         let glcms = OFFSETS
             .iter()
-            .map(|offset| (*offset, glcm(&gs, *offset, GLCM_LEVELS, Some(masks))))
+            .map(|offset| (*offset, glcm(&gs, *offset, GLCM_LEVELS, Some(masks), true)))
             .collect::<Vec<_>>(); // [N, LEVEL, LEVEL] * 4
 
         let mut features = Vec::with_capacity(14 * OFFSETS.len());
