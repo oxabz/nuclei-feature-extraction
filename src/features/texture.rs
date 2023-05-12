@@ -3,13 +3,13 @@ use polars::{
     series::Series,
 };
 use tch::{index::*, Kind, Tensor};
-use tch_utils::{glcm::glcm, glrlm::glrlm, tensor_ext::TensorExt};
+use tch_utils::{glcm::{glcm, glcm_cpu}, glrlm::glrlm, tensor_ext::TensorExt};
 
 use crate::utils::centroids_to_key_strings;
 
 use super::FeatureSet;
 
-const GLCM_LEVELS: u8 = 64;
+const GLCM_LEVELS: [u8; 4] = [32, 64, 128, 254];
 const OFFSETS: [(i64, i64); 4] = [(0, 1), (1, 1), (1, 0), (1, -1)]; // 0, 45, 90, 135
 
 pub struct GlcmFeatureSet;
@@ -28,32 +28,38 @@ impl FeatureSet for GlcmFeatureSet {
         let gs = patchs.mean_dim(Some(&([-3][..])), true, Kind::Float); // [N, 1, H, W]
         let glcms = OFFSETS
             .iter()
-            .map(|offset| (*offset, glcm(&gs, *offset, GLCM_LEVELS, Some(masks), true)))
+            .flat_map(|offset| {
+                GLCM_LEVELS.iter()
+                    .map(|level| {
+                        (*offset, *level, glcm_cpu(&gs, *offset, *level, Some(masks), true))
+                    })
+            })
             .collect::<Vec<_>>(); // [N, LEVEL, LEVEL] * 4
 
         let mut features = Vec::with_capacity(14 * OFFSETS.len());
-        for (offset, glcm) in glcms.iter() {
+        for (offset, level, glcm) in glcms.iter() {
+            let level = *level;
             // glcm: [N, LEVEL, LEVEL]
             let px = glcm.sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N, LEVEL]
             let py = glcm.sum_dim_intlist(Some(&[-2][..]), false, Kind::Float); // [N, LEVEL]
 
             let levels =
-                Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patchs.device())).unsqueeze(0); // [1, LEVEL]
+                Tensor::arange(level as i64, (Kind::Float, patchs.device())).unsqueeze(0); // [1, LEVEL]
             let intensity_x = (&levels * &px).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
             let intensity_y = (&levels * &py).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
 
             let (pxpy, pxdy) = {
                 // [N, LEVEL * 2 - 2], [N, LEVEL]
                 let pxpy = Tensor::zeros(
-                    &[batch_size, GLCM_LEVELS as i64 * 2 - 2],
+                    &[batch_size, level as i64 * 2 - 2],
                     (Kind::Float, patchs.device()),
                 ); // [N, LEVEL * 2 - 2]
                 let pxdy = Tensor::zeros(
-                    &[batch_size, GLCM_LEVELS as i64],
+                    &[batch_size, level as i64],
                     (Kind::Float, patchs.device()),
                 ); // [N, LEVEL]
-                for i in 0..GLCM_LEVELS {
-                    for j in 0..GLCM_LEVELS {
+                for i in 0..level {
+                    for j in 0..level {
                         let (i, j) = (i as i64, j as i64);
                         let idx1 = (i + j) - 2;
                         let idx2 = (i - j).abs();
@@ -96,7 +102,7 @@ impl FeatureSet for GlcmFeatureSet {
                 {
                     //[N]
                     let intensity =
-                        Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patchs.device()));
+                        Tensor::arange(level as i64, (Kind::Float, patchs.device()));
                     let intensity = intensity
                         .unsqueeze(1)
                         .matmul(&intensity.unsqueeze(0))
@@ -107,10 +113,10 @@ impl FeatureSet for GlcmFeatureSet {
 
             let (contrast, dissimilarity) =
                 {
-                    let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patchs.device()))
-                        .view([1, 1, GLCM_LEVELS as i64]);
-                    let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patchs.device()))
-                        .view([1, GLCM_LEVELS as i64, 1]);
+                    let i = Tensor::arange(level as i64, (Kind::Float, patchs.device()))
+                        .view([1, 1, level as i64]);
+                    let j = Tensor::arange(level as i64, (Kind::Float, patchs.device()))
+                        .view([1, level as i64, 1]);
                     let imj = &i * (&i - &j).square(); // [1, LEVEL, LEVEL]
                     let contrast =
                         (glcm * imj).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float); // [N]
@@ -133,7 +139,7 @@ impl FeatureSet for GlcmFeatureSet {
             let (sum_average, sum_variance) = {
                 // [N], [N]
                 let k =
-                    (Tensor::arange(GLCM_LEVELS as i64 * 2 - 2, (Kind::Float, patchs.device()))
+                    (Tensor::arange(level as i64 * 2 - 2, (Kind::Float, patchs.device()))
                         + 2)
                     .unsqueeze(0);
                 let sum_avg = (&k * &pxpy).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
@@ -152,16 +158,16 @@ impl FeatureSet for GlcmFeatureSet {
             );
 
             let sum_of_squares = {
-                let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patchs.device()))
-                    .view([1, GLCM_LEVELS as i64]);
+                let i = Tensor::arange(level as i64, (Kind::Float, patchs.device()))
+                    .view([1, level as i64]);
                 let var = (i - intensity_x.unsqueeze(1)).square().unsqueeze(-1) * glcm;
                 var.sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float)
             };
 
             let inverse_difference_moment = {
-                let i = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patchs.device()))
+                let i = Tensor::arange(level as i64, (Kind::Float, patchs.device()))
                     .view([1, -1, 1]);
-                let j = Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patchs.device()))
+                let j = Tensor::arange(level as i64, (Kind::Float, patchs.device()))
                     .view([1, 1, -1]);
                 let imj = (i - j).square();
                 let idm = glcm / (imj + 1.0);
@@ -170,7 +176,7 @@ impl FeatureSet for GlcmFeatureSet {
 
             let (difference_average, difference_variance) = {
                 let k =
-                    Tensor::arange(GLCM_LEVELS as i64, (Kind::Float, patchs.device())).unsqueeze(0);
+                    Tensor::arange(level as i64, (Kind::Float, patchs.device())).unsqueeze(0);
                 let da = (&k * &pxdy).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
                 let dva = ((k - da.unsqueeze(-1)).square() * &pxdy).sum_dim_intlist(
                     Some(&[-1][..]),
@@ -204,53 +210,53 @@ impl FeatureSet for GlcmFeatureSet {
                 Vec::<f32>::from(information_measure_correlation2);
 
             features.push((
-                format!("correlation_{}_{}", offset.0, offset.1),
+                format!("correlation_{}_{}_{level}", offset.0, offset.1),
                 correlation,
             ));
-            features.push((format!("contrast_{}_{}", offset.0, offset.1), contrast));
+            features.push((format!("contrast_{}_{}_{level}", offset.0, offset.1), contrast));
             features.push((
-                format!("dissimilarity_{}_{}", offset.0, offset.1),
+                format!("dissimilarity_{}_{}_{level}", offset.0, offset.1),
                 dissimilarity,
             ));
-            features.push((format!("entropy_{}_{}", offset.0, offset.1), entropy));
+            features.push((format!("entropy_{}_{}_{level}", offset.0, offset.1), entropy));
             features.push((
-                format!("angular_second_moment_{}_{}", offset.0, offset.1),
+                format!("angular_second_moment_{}_{}_{level}", offset.0, offset.1),
                 angular_second_moment,
             ));
             features.push((
-                format!("sum_average_{}_{}", offset.0, offset.1),
+                format!("sum_average_{}_{}_{level}", offset.0, offset.1),
                 sum_average,
             ));
             features.push((
-                format!("sum_variance_{}_{}", offset.0, offset.1),
+                format!("sum_variance_{}_{}_{level}", offset.0, offset.1),
                 sum_variance,
             ));
             features.push((
-                format!("sum_entropy_{}_{}", offset.0, offset.1),
+                format!("sum_entropy_{}_{}_{level}", offset.0, offset.1),
                 sum_entropy,
             ));
             features.push((
-                format!("sum_of_squares_{}_{}", offset.0, offset.1),
+                format!("sum_of_squares_{}_{}_{level}", offset.0, offset.1),
                 sum_of_squares,
             ));
             features.push((
-                format!("inverse_difference_moment_{}_{}", offset.0, offset.1),
+                format!("inverse_difference_moment_{}_{}_{level}", offset.0, offset.1),
                 inverse_difference_moment,
             ));
             features.push((
-                format!("difference_average_{}_{}", offset.0, offset.1),
+                format!("difference_average_{}_{}_{level}", offset.0, offset.1),
                 difference_average,
             ));
             features.push((
-                format!("difference_variance_{}_{}", offset.0, offset.1),
+                format!("difference_variance_{}_{}_{level}", offset.0, offset.1),
                 difference_variance,
             ));
             features.push((
-                format!("information_measure_correlation1_{}_{}", offset.0, offset.1),
+                format!("information_measure_correlation1_{}_{}_{level}", offset.0, offset.1),
                 information_measure_correlation1,
             ));
             features.push((
-                format!("information_measure_correlation2_{}_{}", offset.0, offset.1),
+                format!("information_measure_correlation2_{}_{}_{level}", offset.0, offset.1),
                 information_measure_correlation2,
             ));
         }
