@@ -1,131 +1,125 @@
+mod args;
 mod geojson;
-mod features;
-pub mod consts;
 mod utils;
+mod features;
+use std::{fs::File, io::{BufReader, BufWriter}, sync::{Arc, Mutex, atomic::{AtomicU32}}, process::exit};
+use log::{error, debug, info};
+use args::{ARGS, Args};
+use polars::prelude::*;
+use rayon::prelude::*;
 
-use std::{path::PathBuf, fs::File, io::BufReader, sync::{Arc, RwLock, Mutex, atomic::{AtomicU32, Ordering}}, marker::PhantomData, vec::IntoIter};
-
-use clap::Parser;
-use csv::WriterBuilder;
-use image::DynamicImage;
-use lazy_static::*;
-//use itertools::Itertools;
-use openslide::OpenSlide;
-use rayon::{prelude::*};
-use tch::{Tensor, index::*};
-use tch_utils::image::ImageTensorExt;
-
-use crate::{consts::PATCH_SIZE, utils::IntoParBridgeBridge, geojson::Feature, features::Features};
-
-#[derive(Debug, Parser)]
-struct Args{
-    /// Input GeoJSON file
-    input_geojson: PathBuf,
-    /// Input slide file
-    input_slide: PathBuf,
-    /// Output file (.csv)
-    output: PathBuf
+fn load_slide()-> openslide_rs::OpenSlide {
+    let slide = openslide_rs::OpenSlide::new(&ARGS.slide).unwrap();
+    slide
 }
 
-impl std::fmt::Display for Args{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Args:\n\tinput_geojson: {:?}\n\tinput_slide: {:?}\n\toutput: {:?}", self.input_geojson, self.input_slide, self.output)
-    }
+fn load_geometry() -> geojson::FeatureCollection{
+    let geometry = File::open(&ARGS.geometry).unwrap();
+    let geometry = BufReader::new(geometry);
+    let geometry: geojson::FeatureCollection = serde_json::from_reader(geometry).unwrap();
+    geometry
 }
 
-lazy_static! {
-    static ref SLIDE: Mutex<Option<OpenSlide>> = Mutex::new(None);
-}
+fn main(){
+    // Preping the environment
+    ARGS.handle_verbose();
+    pretty_env_logger::init();
+    ARGS.validate_paths();
+    ARGS.validate_gpu();
+    ARGS.handle_thread_count();
 
-fn main() {
-    let args = Args::parse();
-    println!("{}", args);
+    // Loading the json file containing the geometry
+    info!("Loading the geojson");
+    let start = std::time::Instant::now();
+    let geometry = load_geometry();
+    debug!("Loaded geojson in {:?}", start.elapsed());
+
+    // Loading the slide
+    let slide = load_slide();
+    let slide = Arc::new(Mutex::new(slide));
+
+    let Args {  output, patch_size, gpus, batch_size, feature_sets, .. } = ARGS.clone();
+    let patch_size = patch_size as usize;
     
-    let file = match File::open(args.input_geojson) {
-        Ok(ok) => BufReader::new(ok),
-        Err(err) => {
-            println!("Couldn't open files : {}", err);
-            std::process::exit(1);
-        },
-    };
-    let geojson: geojson::FeatureCollection = match serde_json::from_reader(file) {
-        Ok(ok) => {ok},
-        Err(err) => {
-            println!("Couldn't parse GeoJSON : {}", err);
-            std::process::exit(1);
-        },
-    };
+    let feature_sets = args::FeatureSet::to_fs(&feature_sets);
 
-    let slide = match OpenSlide::new(&args.input_slide) {
-        Ok(ok) => ok,
-        Err(err) => {
-            println!("Couldn't open slide : {}", err);
-            std::process::exit(1);
-        },
-    };
+    let output_df = Arc::new(Mutex::new(None));
 
-    {
-        let mut lck = SLIDE.lock().unwrap();
-        *lck = Some(slide);
-    };
-
+    info!("Extracting features");
+    let count = geometry.features.len();
     let done = AtomicU32::new(0);
-    let count = geojson.features.len();
+    geometry.features
+        .par_chunks(batch_size)
+        .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
+        .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
+        .map(|(centroids, polygones, patches, masks)|{
+            let features = feature_sets.iter()
+                .map(|fs|{
+                    debug!("Computing {} features for {} patches", fs.name(), centroids.len());
+                    let start = std::time::Instant::now();
+                    let features = fs.compute_features_batched(&centroids, &polygones, &patches, &masks);
+                    debug!("Computed {} features for {} patches in {:?}", fs.name(), centroids.len(), start.elapsed());
+                    features
+                })
+                .collect::<Vec<_>>();
 
-    let features = geojson.features.into_par_iter()
-        .filter_map(move |feature|{
-            let poly = feature.geometry.coordinates[0].clone();
-            let mut centroid = (0.0, 0.0);
-            for point in &poly{
-                centroid.0 += point[0];
-                centroid.1 += point[1];
+            let centroids = features[0].column("centroid").unwrap().clone();
+            features.iter().for_each(|df|assert!(df.column("centroid").unwrap().eq(&centroids)));
+            let features = std::iter::once(centroids)
+                .chain(
+                    features.into_iter()
+                        .map(|df|df.drop("centroid").unwrap())
+                        .flat_map(|df| df.iter().cloned().collect::<Vec<_>>())
+                )
+                .collect::<Vec<_>>();
+
+            let features = DataFrame::new(features).unwrap();
+
+            features
+        })
+        .for_each(|features|{
+            let height = features.height();
+            let mut output_df = output_df.lock().unwrap();
+            if output_df.is_none() {
+                *output_df = Some(features);
+            } else {
+                let output_df = output_df.as_mut().unwrap();
+                output_df.vstack_mut(&features).unwrap();
             }
-            centroid.0 /= poly.len() as f32;
-            centroid.1 /= poly.len() as f32;
-            let centered_poly = poly.iter().map(|point|{
-                [point[0] - centroid.0, point[1] - centroid.1]
-            }).collect::<Vec<_>>();
+            let done = done.fetch_add(height as u32, std::sync::atomic::Ordering::Relaxed);
+            info!("{} / {}", done + height as u32, count);
+        });
 
-            let patch = {
-                let slide = SLIDE.lock().unwrap();
-                let top = centroid.1 - (PATCH_SIZE as f32 / 2.0);
-                let left = centroid.0 - (PATCH_SIZE as f32 / 2.0);
-                match &*slide{
-                    None => return None,
-                    Some(slide) =>{
-                        slide.read_region(top as usize, left as usize, 0, PATCH_SIZE, PATCH_SIZE)
-                    }
-                }  
-            };
-            let patch = match patch {
-                Ok(ok) => ok,
-                Err(err) => {
-                    eprintln!("{err}");
-                    return None;
-                },
-            };
-
-            Some((centroid, centered_poly, patch))
-        })
-        .map(|(centroid, centered_poly, patch)|{
-            let patch = Tensor::from_image(patch.into());
-            let patch = patch.to_device(tch::Device::cuda_if_available());
-            let patch = patch.i(0..3);
-
-            let features = features::all_features(&centered_poly, &patch);
-            let i = done.fetch_add(1, Ordering::Relaxed);
-            println!("\x1B[F{} / {}", i, count);
-
-            (centroid, features)
-        })
-        .collect::<Vec<_>>();
-
-    let mut writer = WriterBuilder::new().from_path(args.output).unwrap();
-    Features::write_header_to_csv(&mut writer);
-    for (centroid, mut features) in features{
-        features.centroid_x = centroid.0;
-        features.centroid_y = centroid.1;
-        writer.serialize(features).unwrap();
-    }
+    let mut output_df = output_df.lock().unwrap().take().unwrap();
     
+    let ofile = std::fs::File::create(&output).unwrap();
+    let ofile = BufWriter::new(ofile);
+
+    match output.extension().and_then(|ext|ext.to_str()) {
+        Some("csv") => {
+            let mut writer = polars::io::csv::CsvWriter::new(ofile);
+            writer.finish(&mut output_df).unwrap();
+        }
+        Some("parquet") | Some("pqt") => {
+            let writer = polars::io::parquet::ParquetWriter::new(ofile);
+            writer.finish(&mut output_df).unwrap();
+        }
+        Some("json") => {
+            let mut writer = polars::io::json::JsonWriter::new(ofile);
+            writer.finish(&mut output_df).unwrap();
+        }
+        Some("ipc") | Some("feather") => {
+            let mut writer = polars::io::ipc::IpcWriter::new(ofile);
+            writer.finish(&mut output_df).unwrap();
+        }
+        None => {
+            error!("Output file must have an extension");
+            exit(1);
+        },
+        _ => {
+            error!("Unsupported output format. Please use one of the following : csv, parquet, json, ipc, feather");
+            exit(1);
+        }
+    }
+
 }
