@@ -121,7 +121,7 @@ pub(crate) fn move_tensors_to_device((centroid, poly, mut patches, mut masks):(V
     if let Some (gpus) = &gpus {
         let gpus = gpus.clone();
         let gpu_count = gpus.len();
-        let gpu_idx = rayon::current_thread_index().unwrap() % gpu_count;
+        let gpu_idx = rayon::current_thread_index().unwrap_or(0) % gpu_count;
         patches = patches.to_device(Device::Cuda(gpus[gpu_idx]));
         masks = masks.to_device(Device::Cuda(gpus[gpu_idx]));
     }
