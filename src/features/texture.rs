@@ -3,7 +3,7 @@ use polars::{
     series::Series,
 };
 use tch::{index::*, Kind, Tensor};
-use tch_utils::{glcm::{glcm, glcm_cpu}, glrlm::glrlm, tensor_ext::TensorExt};
+use tch_utils::{glcm::{glcm}, glrlm::glrlm, tensor_ext::TensorExt};
 
 use crate::utils::centroids_to_key_strings;
 
@@ -25,20 +25,18 @@ impl FeatureSet for GlcmFeatureSet {
         let _ = tch::no_grad_guard();
         let batch_size = patchs.size()[0];
 
+        let mut features = Vec::with_capacity(14 * OFFSETS.len() * GLCM_LEVELS.len());
+
         let gs = patchs.mean_dim(Some(&([-3][..])), true, Kind::Float); // [N, 1, H, W]
         let glcms = OFFSETS
             .iter()
             .flat_map(|offset| {
                 GLCM_LEVELS.iter()
                     .map(|level| {
-                        (*offset, *level, glcm_cpu(&gs, *offset, *level, Some(masks), true))
+                        (*offset, *level, glcm(&gs, *offset, *level, Some(masks), true))
                     })
-            })
-            .collect::<Vec<_>>(); // [N, LEVEL, LEVEL] * 4
-
-        let mut features = Vec::with_capacity(14 * OFFSETS.len());
-        for (offset, level, glcm) in glcms.iter() {
-            let level = *level;
+            });
+        for (offset, level, glcm) in glcms {
             // glcm: [N, LEVEL, LEVEL]
             let px = glcm.sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N, LEVEL]
             let py = glcm.sum_dim_intlist(Some(&[-2][..]), false, Kind::Float); // [N, LEVEL]
@@ -76,7 +74,7 @@ impl FeatureSet for GlcmFeatureSet {
                 -(&px * (&px + 1e-6).log2()).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
             let entropy_y =
                 -(&py * (&py + 1e-6).log2()).sum_dim_intlist(Some(&[-1][..]), false, Kind::Float); // [N]
-            let entropy_xy = -(glcm * (glcm + 1e-6).log2()).sum_dim_intlist(
+            let entropy_xy = -(&glcm * (&glcm + 1e-6).log2()).sum_dim_intlist(
                 Some(&[-1, -2][..]),
                 false,
                 Kind::Float,
@@ -85,7 +83,7 @@ impl FeatureSet for GlcmFeatureSet {
             let (hxy1, hxy2) = {
                 // [N], [N]
                 let pxpy = px.unsqueeze(-1).matmul(&py.unsqueeze(-2)); // [N, LEVEL, LEVEL]
-                let hxy1 = -(glcm * (&pxpy + 1e-6).log2()).sum_dim_intlist(
+                let hxy1 = -(&glcm * (&pxpy + 1e-6).log2()).sum_dim_intlist(
                     Some(&[-1, -2][..]),
                     false,
                     Kind::Float,
@@ -107,7 +105,7 @@ impl FeatureSet for GlcmFeatureSet {
                         .unsqueeze(1)
                         .matmul(&intensity.unsqueeze(0))
                         .unsqueeze(0); // [1, LEVEL, LEVEL]
-                    (glcm * intensity - (&intensity_x * &intensity_y).view([-1, 1, 1]))
+                    (&glcm * intensity - (&intensity_x * &intensity_y).view([-1, 1, 1]))
                         .sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float)
                 };
 
@@ -119,14 +117,14 @@ impl FeatureSet for GlcmFeatureSet {
                         .view([1, level as i64, 1]);
                     let imj = &i * (&i - &j).square(); // [1, LEVEL, LEVEL]
                     let contrast =
-                        (glcm * imj).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float); // [N]
+                        (&glcm * imj).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float); // [N]
                     let imj = (i - j).abs(); // [1, LEVEL, LEVEL]
                     let dissimilarity =
-                        (glcm * imj).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float);
+                        (&glcm * imj).sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float);
                     (contrast, dissimilarity)
                 };
 
-            let entropy = -(glcm * (glcm + 1e-6).log2()).sum_dim_intlist(
+            let entropy = -(&glcm * (&glcm + 1e-6).log2()).sum_dim_intlist(
                 Some(&[-1, -2][..]),
                 false,
                 Kind::Float,
@@ -160,7 +158,7 @@ impl FeatureSet for GlcmFeatureSet {
             let sum_of_squares = {
                 let i = Tensor::arange(level as i64, (Kind::Float, patchs.device()))
                     .view([1, level as i64]);
-                let var = (i - intensity_x.unsqueeze(1)).square().unsqueeze(-1) * glcm;
+                let var = (i - intensity_x.unsqueeze(1)).square().unsqueeze(-1) * &glcm;
                 var.sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float)
             };
 
@@ -170,7 +168,7 @@ impl FeatureSet for GlcmFeatureSet {
                 let j = Tensor::arange(level as i64, (Kind::Float, patchs.device()))
                     .view([1, 1, -1]);
                 let imj = (i - j).square();
-                let idm = glcm / (imj + 1.0);
+                let idm = &glcm / (imj + 1.0);
                 idm.sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float)
             };
 
