@@ -145,6 +145,7 @@ impl FeatureSet for ShapeFeatureSet {
             lconvex_perimeter.push(convex_perimeter);
         }
 
+        #[cfg(debug_assertions)]
         let _ = tch::vision::image::save(&(dbg*255), "dbg.png");
 
         let centroids = centroids_to_key_strings(&centroids);
