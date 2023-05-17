@@ -45,5 +45,5 @@ do
     slide_file=$slide_folder/$(basename $geojson_file .geojson).svs
     output_file=$output_folder/$(basename $geojson_file .geojson).$output_file_extension
     echo "Processing $geojson_file"
-    ./nuclei-feature-extraction -o -g 0 -g 1 -b=350 $geojson_file $slide_file $output_file all
+    ./nuclei-feature-extraction $EXTRACTION_ARGS $geojson_file $slide_file $output_file $EXTRACTION_FEATURES
 done
