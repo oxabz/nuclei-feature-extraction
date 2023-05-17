@@ -2,8 +2,14 @@
 name = "nuclei-feature-extraction"
 version = "0.1.0"
 edition = "2021"
+default-run = "nuclei-feature-extraction"
 
-[profile.release]
+[[bin]]
+name = "nuclei-feature-extraction"
+path = "src/main.rs"
+
+# we need to add a dummy bin in docker to build dependencies first (see https://stackoverflow.com/questions/58473606/cache-rust-dependencies-with-docker-build)
+# [[dummy placeholder]]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
