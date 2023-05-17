@@ -44,9 +44,13 @@ impl FeatureSet for ShapeFeatureSet {
         let mut leliptic_deviation_ = Vec::with_capacity(batch_size as usize);
         let mut lconvex_hull_area = Vec::with_capacity(batch_size as usize);
         let mut lconvex_deffect = Vec::with_capacity(batch_size as usize);
-        let mut lconvex_positive_defect = Vec::with_capacity(batch_size as usize);
-        let mut lconvex_negative_defect = Vec::with_capacity(batch_size as usize);
         let mut lconvex_perimeter = Vec::with_capacity(batch_size as usize);
+
+        #[cfg(debug_assertions)]
+        let dbg = {
+            let h = (batch_size as f64 / 2.0).ceil() as i64;
+            Tensor::zeros(&[3, h*64, 4*64], (Kind::Float, device))
+        };
 
         for i in 0..batch_size {
             let polygon = &polygons[i as usize];
@@ -66,25 +70,66 @@ impl FeatureSet for ShapeFeatureSet {
             centroid[1] -= patch_size as f32 / 2.0;
             let centroid = centroid;
 
-            let (major_axis, minor_axis, angle) = major_minor_axes_w_angle(&mask);
+            let (major_axis, minor_axis, angle, eigen) = major_minor_axes_w_angle(&mask);
             let eccentricity = eccentricity(major_axis, minor_axis);
             let orientation = angle;
 
             let elipse_mask = tch_utils::shapes::ellipse(
                 patch_size,
                 patch_size,
-                (centroid[0] as f64, centroid[1] as f64),
-                (major_axis as f64 * 2.0, minor_axis as f64 * 2.0),
+                (centroid[1] as f64, centroid[0] as f64),
+                (major_axis as f64, minor_axis as f64),
                 angle as f64,
                 (Kind::Float, device),
             );
 
             let convex_perimeter = perimeter(&hull);
 
-            let (convex_hull_area, convex_deffect, convex_positive_defect, convex_negative_defect) =
+            let (convex_hull_area, convex_deffect) =
                 convex_hull_stats(&mask, &hull_mask);
             let area_ = area(&mask);
             let perimeter = perimeter(&polygon);
+
+            #[cfg(debug_assertions)]
+            {
+                let x = (i % 2)*128;
+                let y = (i / 2)*64;
+                let xb = x + 64;
+                let patch1 = dbg.i((.., y..y+64, x..x+64));
+                let patch2 = dbg.i((.., y..y+64, xb..xb+64));
+                patch1.i(0).copy_(&(mask.squeeze()*0.5));
+                patch1.i(1).copy_(&(hull_mask.squeeze()*0.5));
+                patch2.i(0).copy_(&(mask.squeeze()*0.5));
+                patch2.i(1).copy_(&(elipse_mask.squeeze()*0.5));
+                let col = Tensor::of_slice(&[1.0, 0.0, 0.0]);
+                let ev1 = eigen.i(0);
+                // let ev1 = &ev1 / ev1.pow_tensor_scalar(2).sum(tch::Kind::Float).sqrt();
+                for l in 0..100{
+                    let l = l as f64 / 100.0;
+                    let x = (l * f64::from(ev1.i(0)) * major_axis as f64 + centroid[1] as f64 + 31.0).min(63.0) as i64;
+                    let y = (l * f64::from(ev1.i(1)) * major_axis as f64 + centroid[0] as f64 + 31.0).min(63.0) as i64;
+                    patch2.i((..,y, x)).copy_(&col);
+                }
+                let col = Tensor::of_slice(&[0.0, 0.0, 1.0]);
+                let ev2 = eigen.i(1);
+                // let ev2 = &ev2 / ev2.pow_tensor_scalar(2).sum(tch::Kind::Float).sqrt();
+                for l in 0..100{
+                    let l = l as f64 / 100.0;
+                    let x = (l * f64::from(ev2.i(0)) * major_axis as f64 + centroid[1] as f64 + 31.0).min(63.0) as i64;
+                    let y = (l * f64::from(ev2.i(1)) * major_axis as f64 + centroid[0] as f64 + 31.0).min(63.0) as i64;
+                    patch2.i((..,y, x)).copy_(&col);
+                }
+                let _ = patch1.i((.., centroid[0] as i64 + 31, centroid[1] as i64 + 31)).fill_(1.0);
+                let _ = patch1.i((.., 0, 0)).fill_(1.0);
+                let _ = patch1.i((.., 0, 63)).fill_(1.0);
+                let _ = patch1.i((.., 63, 0)).fill_(1.0);
+                let _ = patch1.i((.., 63, 63)).fill_(1.0);
+                let _ = patch2.i((.., centroid[0] as i64 + 31, centroid[1] as i64 + 31)).fill_(1.0);
+                let _ = patch2.i((.., 0, 0)).fill_(1.0);
+                let _ = patch2.i((.., 0, 63)).fill_(1.0);
+                let _ = patch2.i((.., 63, 0)).fill_(1.0);
+                let _ = patch2.i((.., 63, 63)).fill_(1.0);
+            }
 
             larea_.push(area_);
             lmajor_axis.push(major_axis);
@@ -97,10 +142,11 @@ impl FeatureSet for ShapeFeatureSet {
             leliptic_deviation_.push(eliptic_deviation(&mask, &elipse_mask));
             lconvex_hull_area.push(convex_hull_area);
             lconvex_deffect.push(convex_deffect);
-            lconvex_positive_defect.push(convex_positive_defect);
-            lconvex_negative_defect.push(convex_negative_defect);
             lconvex_perimeter.push(convex_perimeter);
         }
+
+        let _ = tch::vision::image::save(&(dbg*255), "dbg.png");
+
         let centroids = centroids_to_key_strings(&centroids);
         df!(
             "centroid" => centroids,
@@ -115,8 +161,6 @@ impl FeatureSet for ShapeFeatureSet {
             "eliptic_deviation" => leliptic_deviation_,
             "convex_hull_area" => lconvex_hull_area,
             "convex_deffect" => lconvex_deffect,
-            "convex_positive_defect" => lconvex_positive_defect,
-            "convex_negative_defect" => lconvex_negative_defect,
             "convex_perimeter" => lconvex_perimeter,
         ).expect("Couldnt create the dataframe")
     }
@@ -140,12 +184,12 @@ pub(crate) fn perimeter(polygon: &Vec<[f32; 2]>) -> f32 {
     perimeter
 }
 
-pub(crate) fn major_minor_axes_w_angle(mask: &Tensor) -> (f32, f32, f32) {
+pub(crate) fn major_minor_axes_w_angle(mask: &Tensor) -> (f32, f32, f32, Tensor) {
     let nz = mask.squeeze().nonzero();
     let centroid = nz.mean_dim(Some(vec![0].as_slice()), false, tch::Kind::Float);
 
     if centroid.size()[0] == 0 {
-        return (f32::NAN, f32::NAN, f32::NAN);
+        return (f32::NAN, f32::NAN, f32::NAN, Tensor::zeros(&[2, 2], (Kind::Float, mask.device())));
     }
 
     let points = nz - centroid;
@@ -153,17 +197,17 @@ pub(crate) fn major_minor_axes_w_angle(mask: &Tensor) -> (f32, f32, f32) {
 
     if bool::from(cov.isnan().any()) {
         error!("Covariance matrix contains NaN for mask: (dim:{:?}, sum:{})", mask.size(), f32::from(mask.sum(tch::Kind::Float)));
-        return (f32::NAN, f32::NAN, f32::NAN);
+        return (f32::NAN, f32::NAN, f32::NAN, Tensor::zeros(&[2, 2], (Kind::Float, mask.device())));
     }
 
     if cov.size()[0] != 2 || cov.size()[1] != 2 {
         error!("Covariance matrix is not 2x2 for mask: (dim:{:?}, sum:{})", mask.size(), f32::from(mask.sum(tch::Kind::Float)));
-        return (f32::NAN, f32::NAN, f32::NAN);
+        return (f32::NAN, f32::NAN, f32::NAN, Tensor::zeros(&[2, 2], (Kind::Float, mask.device())));
     }
 
     if bool::from(cov.isinf().any()) {
         error!("Covariance matrix contains Inf for mask: (dim:{:?}, sum:{})", mask.size(), f32::from(mask.sum(tch::Kind::Float)));
-        return (f32::NAN, f32::NAN, f32::NAN);
+        return (f32::NAN, f32::NAN, f32::NAN, Tensor::zeros(&[2, 2], (Kind::Float, mask.device())));
     }
 
     let (eigenvalues, eigenvector) = cov.linalg_eig();
@@ -180,9 +224,9 @@ pub(crate) fn major_minor_axes_w_angle(mask: &Tensor) -> (f32, f32, f32) {
     let x = f64::from(mc.i(vec![0])) as f32;
     let y = f64::from(mc.i(vec![1])) as f32;
 
-    let angle = y.atan2(x);
+    let angle = x.atan2(y);
 
-    (major_axis, minor_axis, angle)
+    (major_axis * 2.0, minor_axis * 2.0, angle, eigenvector)
 }
 
 pub(crate) fn eccentricity(major_axis: f32, minor_axis: f32) -> f32 {
@@ -199,26 +243,17 @@ pub(crate) fn eliptic_deviation(mask: &Tensor, elipse_mask: &Tensor) -> f32 {
     f64::from(delta.abs().sum(tch::Kind::Float) / mask_area as f64) as f32
 }
 
-pub(crate) fn convex_hull_stats(mask: &Tensor, hull: &Tensor) -> (f32, f32, f32, f32) {
+pub(crate) fn convex_hull_stats(mask: &Tensor, hull: &Tensor) -> (f32, f32) {
     let mask = mask.to_kind(tch::Kind::Float);
     let hull = hull.to_kind(tch::Kind::Float);
 
     let convex_hull_area = area(&hull);
 
-    let delta = &mask - &hull;
-
-    let convex_deffect = (area(&mask) - convex_hull_area) / area(&mask);
-
-    let convex_positive_defect =
-        f64::from(delta.clamp_min(0.0).sum(tch::Kind::Float)) as f32 / area(&mask);
-    let convex_negative_defect =
-        f64::from((-delta).clamp_max(0.0).sum(tch::Kind::Float)) as f32 / area(&mask);
+    let convex_deffect = -(area(&mask) - convex_hull_area) / area(&mask);
 
     (
         convex_hull_area,
-        convex_deffect,
-        convex_positive_defect,
-        convex_negative_defect,
+        convex_deffect
     )
 }
 

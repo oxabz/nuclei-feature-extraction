@@ -5,3 +5,5 @@ a.out
 dbg.png
 /libtorch/
 test.png
+*.ipynb
+dbg.png
