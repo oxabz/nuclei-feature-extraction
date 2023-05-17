@@ -104,7 +104,7 @@ pub struct Args {
     pub gpus: Option<Vec<usize>>,
     /// batch size :
     /// the number of patches to extract at once
-    #[clap(short, long, default_value = "1000")]
+    #[clap(short, long, default_value = "100")]
     pub batch_size: usize,
     /// verbose :
     /// if specified, will print more information
