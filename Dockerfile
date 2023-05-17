@@ -24,13 +24,19 @@ RUN mkdir src/ && \
 COPY src/ src/
 RUN cargo build --release
 
-FROM nvidia/cuda:12.1.1-runtime-ubi8 
-WORKDIR /usr/src/app
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+WORKDIR /app
 VOLUME [ "/in-slides", "/in-geojson", "/out" ]
 
 # Install dependencies (we reuse the ones from the builder)
 COPY --from=builder /usr/src/app/libtorch libtorch
-ENV LIBTORCH="/usr/src/app/libtorch"
+RUN ls /app/libtorch/**
+ENV LIBTORCH="/app/libtorch"
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${LIBTORCH}/lib"
+RUN cat /etc/os-release
+RUN apt update -y && \
+    apt install -y libopenslide0 \
+       libgomp1
 
 # Copy the actual application
 COPY --from=builder /usr/src/app/target/release/nuclei-feature-extraction .
@@ -38,4 +44,4 @@ COPY run.sh .
 RUN chmod +x run.sh
 
 # Run the application
-ENTRYPOINT [ "./run.sh", "/in-geojson", "/in-slides", "/out", "$EXTRACTION_OUT_EXT" ]
+ENTRYPOINT [ "./run.sh", "/in-geojson", "/in-slides", "/out"]
