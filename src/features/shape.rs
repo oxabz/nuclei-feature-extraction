@@ -44,8 +44,6 @@ impl FeatureSet for ShapeFeatureSet {
         let mut leliptic_deviation_ = Vec::with_capacity(batch_size as usize);
         let mut lconvex_hull_area = Vec::with_capacity(batch_size as usize);
         let mut lconvex_deffect = Vec::with_capacity(batch_size as usize);
-        let mut lconvex_positive_defect = Vec::with_capacity(batch_size as usize);
-        let mut lconvex_negative_defect = Vec::with_capacity(batch_size as usize);
         let mut lconvex_perimeter = Vec::with_capacity(batch_size as usize);
 
         #[cfg(debug_assertions)]
@@ -87,7 +85,7 @@ impl FeatureSet for ShapeFeatureSet {
 
             let convex_perimeter = perimeter(&hull);
 
-            let (convex_hull_area, convex_deffect, convex_positive_defect, convex_negative_defect) =
+            let (convex_hull_area, convex_deffect) =
                 convex_hull_stats(&mask, &hull_mask);
             let area_ = area(&mask);
             let perimeter = perimeter(&polygon);
@@ -144,8 +142,6 @@ impl FeatureSet for ShapeFeatureSet {
             leliptic_deviation_.push(eliptic_deviation(&mask, &elipse_mask));
             lconvex_hull_area.push(convex_hull_area);
             lconvex_deffect.push(convex_deffect);
-            lconvex_positive_defect.push(convex_positive_defect);
-            lconvex_negative_defect.push(convex_negative_defect);
             lconvex_perimeter.push(convex_perimeter);
         }
 
@@ -165,8 +161,6 @@ impl FeatureSet for ShapeFeatureSet {
             "eliptic_deviation" => leliptic_deviation_,
             "convex_hull_area" => lconvex_hull_area,
             "convex_deffect" => lconvex_deffect,
-            "convex_positive_defect" => lconvex_positive_defect,
-            "convex_negative_defect" => lconvex_negative_defect,
             "convex_perimeter" => lconvex_perimeter,
         ).expect("Couldnt create the dataframe")
     }
@@ -249,26 +243,17 @@ pub(crate) fn eliptic_deviation(mask: &Tensor, elipse_mask: &Tensor) -> f32 {
     f64::from(delta.abs().sum(tch::Kind::Float) / mask_area as f64) as f32
 }
 
-pub(crate) fn convex_hull_stats(mask: &Tensor, hull: &Tensor) -> (f32, f32, f32, f32) {
+pub(crate) fn convex_hull_stats(mask: &Tensor, hull: &Tensor) -> (f32, f32) {
     let mask = mask.to_kind(tch::Kind::Float);
     let hull = hull.to_kind(tch::Kind::Float);
 
     let convex_hull_area = area(&hull);
 
-    let delta = &mask - &hull;
-
-    let convex_deffect = (area(&mask) - convex_hull_area) / area(&mask);
-
-    let convex_positive_defect =
-        f64::from(delta.clamp_min(0.0).sum(tch::Kind::Float)) as f32 / area(&mask);
-    let convex_negative_defect =
-        f64::from((-delta).clamp_max(0.0).sum(tch::Kind::Float)) as f32 / area(&mask);
+    let convex_deffect = -(area(&mask) - convex_hull_area) / area(&mask);
 
     (
         convex_hull_area,
-        convex_deffect,
-        convex_positive_defect,
-        convex_negative_defect,
+        convex_deffect
     )
 }
 
