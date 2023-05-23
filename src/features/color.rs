@@ -21,13 +21,13 @@ impl FeatureSet for ColorFeatureSet{
         let hsv = tch_utils::color::hsv_from_rgb(patchs);
         let hed = tch_utils::color::hed_from_rgb(patchs);
         let (mean_rgb, std_rgb) = mean_std(patchs, masks);
-        let (mean_hsv, std_hsv) = mean_std(&hsv, masks);
         let (mean_hed, std_hed) = mean_std(&hed, masks);
 
-        let h = hsv.select(-3, 0);
+        let mut h = hsv.select(-3, 0);
         let mean_h = circular_mean(&h, &masks);
-        let std_h = circular_std(&h, &masks, &mean_h);
-        
+        h -= &mean_h.view([-1, 1, 1]);
+        let (mean_hsv, std_hsv) = mean_std(&hsv, masks);
+
         let mean_r = Vec::<f32>::from(mean_rgb.select(-1, 0));
         let mean_g = Vec::<f32>::from(mean_rgb.select(-1, 1));
         let mean_b = Vec::<f32>::from(mean_rgb.select(-1, 2));
@@ -40,7 +40,7 @@ impl FeatureSet for ColorFeatureSet{
         let mean_s = Vec::<f32>::from(mean_hsv.select(-1, 1));
         let mean_v = Vec::<f32>::from(mean_hsv.select(-1, 2));
 
-        let std_h = Vec::<f32>::from(std_h);
+        let std_h = Vec::<f32>::from(std_hsv.select(-1, 0));
         let std_s = Vec::<f32>::from(std_hsv.select(-1, 1));
         let std_v = Vec::<f32>::from(std_hsv.select(-1, 2));
 
@@ -126,23 +126,5 @@ pub fn circular_mean(image: &Tensor, mask: &Tensor) -> Tensor {
     let cos = cos.sum_dim_intlist(Some(&[-1,-2, -3][..]), false, tch::Kind::Float) / &mask_area;
     let sin = sin.sum_dim_intlist(Some(&[-1,-2, -3][..]), false, tch::Kind::Float) / &mask_area;
     
-    sin.atan2(&cos).rad2deg().fmod(360.0)
-}
-
-/**
-Compute the standard deviation of the image.
-# Arguments
-- `img` - [N, 1, H, W] tensor
-- `mask` - [N, 1, H, W] tensor
-- `mean` - [N] tensor
-# Returns
-- `std` - [N] tensor
- */
-pub fn circular_std(image: &Tensor, mask: &Tensor, mean: &Tensor)-> Tensor{
-    let mean = mean.view([-1, 1, 1, 1]);
-    let centered_img = (image - &mean) * mask;
-    let centered_img = centered_img.square();
-    let mask_area = mask.sum_dim_intlist(Some(&[-1,-2,-3][..]), false, tch::Kind::Float);
-    let variance = centered_img.sum_dim_intlist(Some(&[-1,-2,-3][..]), false, tch::Kind::Float) / &mask_area;
-    variance.sqrt()
+    (sin.atan2(&cos).rad2deg_() + 360.0).fmod_(360.0)
 }
