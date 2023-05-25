@@ -9,7 +9,7 @@ use crate::utils::centroids_to_key_strings;
 
 use super::FeatureSet;
 
-const GLCM_LEVELS: [u8; 4] = [32, 64, 128, 255];
+const GLCM_LEVELS: [u8; 4] = [32, 64, 128, 254];
 const OFFSETS: [(i64, i64); 4] = [(0, 1), (1, 1), (1, 0), (1, -1)]; // 0, 45, 90, 135
 
 pub struct GlcmFeatureSet;
