@@ -8,7 +8,7 @@ use super::FeatureSet;
 pub struct ColorFeatureSet;
 
 impl FeatureSet for ColorFeatureSet{
-    fn compute_features_batched(&self, centroids: &Vec<[f32; 2]>, polygons: &Vec<Vec<[f32; 2]>>, patchs: &Tensor, masks: &Tensor) -> polars::prelude::DataFrame {
+    fn compute_features_batched(&self, centroids: &[[f32; 2]], polygons: &[Vec<[f32; 2]>], patchs: &Tensor, masks: &Tensor) -> polars::prelude::DataFrame {
         assert!(patchs.size().len() == 4, "The patchs tensor must be 4 dimensional");
         assert!(masks.size().len() == 4, "The masks tensor must be 4 dimensional");
         assert!(patchs.size()[1] == 3, "The patchs tensor must have 3 channels");
@@ -24,7 +24,7 @@ impl FeatureSet for ColorFeatureSet{
         let (mean_hed, std_hed) = mean_std(&hed, masks);
 
         let mut h = hsv.select(-3, 0);
-        let mean_h = circular_mean(&h, &masks);
+        let mean_h = circular_mean(&h, masks);
         h -= &mean_h.view([-1, 1, 1]);
         let (mean_hsv, std_hsv) = mean_std(&hsv, masks);
 
