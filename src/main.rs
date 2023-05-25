@@ -8,9 +8,9 @@ use args::{ARGS, Args};
 use polars::prelude::*;
 use rayon::prelude::*;
 
+
 fn load_slide()-> openslide_rs::OpenSlide {
-    let slide = openslide_rs::OpenSlide::new(&ARGS.slide).unwrap();
-    slide
+    openslide_rs::OpenSlide::new(&ARGS.slide).unwrap()
 }
 
 fn load_geometry() -> geojson::FeatureCollection{
@@ -73,9 +73,7 @@ fn main(){
                 )
                 .collect::<Vec<_>>();
 
-            let features = DataFrame::new(features).unwrap();
-
-            features
+            DataFrame::new(features).unwrap()
         })
         .for_each(|features|{
             let height = features.height();

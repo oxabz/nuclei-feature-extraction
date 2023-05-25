@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::error;
-use std::{path::PathBuf, process::exit, env};
+use std::{env, path::PathBuf, process::exit};
 
 use crate::features;
 
@@ -32,7 +32,7 @@ impl std::str::FromStr for FeatureSet {
 }
 
 impl FeatureSet {
-    pub fn flat(s: &Vec<Self>) -> Vec<Self> {
+    pub fn flat(s: &[Self]) -> Vec<Self> {
         s.iter()
             .flat_map(|fs| match fs {
                 FeatureSet::All => vec![
@@ -48,7 +48,7 @@ impl FeatureSet {
             .collect()
     }
 
-    pub fn to_fs(s: &Vec<Self>) -> Vec<Box<dyn features::FeatureSet>> {
+    pub fn to_fs(s: &[Self]) -> Vec<Box<dyn features::FeatureSet>> {
         let fs = Self::flat(s);
         fs.iter()
             .map(|fs| match fs {
@@ -144,23 +144,21 @@ impl Args {
             exit(1);
         }
 
-        if self.output.exists() {
-            if !self.overwrite {
-                error!(
-                    "Output file already exists : {:?}\nUse --overwrite to overwrite it",
-                    self.output
-                );
-                exit(1);
-            }
+        if self.output.exists() && !self.overwrite {
+            error!(
+                "Output file already exists : {:?}\nUse --overwrite to overwrite it",
+                self.output
+            );
+            exit(1);
         }
 
         match self.output.extension().and_then(|s| s.to_str()) {
-            Some("csv") | Some("parquet") | Some("pqt") |
-            Some("json") | Some("ipc") | Some("feather") => {}
+            Some("csv") | Some("parquet") | Some("pqt") | Some("json") | Some("ipc")
+            | Some("feather") => {}
             None => {
                 error!("Output file must have an extension");
                 exit(1);
-            },
+            }
             _ => {
                 error!("Unsupported output format. Please use one of the following : csv, parquet, json, ipc, feather");
                 exit(1);

@@ -15,8 +15,8 @@ pub struct ShapeFeatureSet;
 impl FeatureSet for ShapeFeatureSet {
     fn compute_features_batched(
         &self,
-        centroids: &Vec<[f32; 2]>,
-        polygons: &Vec<Vec<[f32; 2]>>,
+        centroids: &[[f32; 2]],
+        polygons: &[Vec<[f32; 2]>],
         patchs: &Tensor,
         masks: &Tensor,
     ) -> polars::prelude::DataFrame {
@@ -88,7 +88,7 @@ impl FeatureSet for ShapeFeatureSet {
             let (convex_hull_area, convex_deffect) =
                 convex_hull_stats(&mask, &hull_mask);
             let area_ = area(&mask);
-            let perimeter = perimeter(&polygon);
+            let perimeter = perimeter(polygon);
 
             #[cfg(debug_assertions)]
             {
@@ -148,7 +148,7 @@ impl FeatureSet for ShapeFeatureSet {
         #[cfg(debug_assertions)]
         let _ = tch::vision::image::save(&(dbg*255), "dbg.png");
 
-        let centroids = centroids_to_key_strings(&centroids);
+        let centroids = centroids_to_key_strings(centroids);
         df!(
             "centroid" => centroids,
             "area" => larea_,

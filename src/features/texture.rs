@@ -17,8 +17,8 @@ pub struct GlcmFeatureSet;
 impl FeatureSet for GlcmFeatureSet {
     fn compute_features_batched(
         &self,
-        centroids: &Vec<[f32; 2]>,
-        _polygons: &Vec<Vec<[f32; 2]>>,
+        centroids: &[[f32; 2]],
+        _polygons: &[Vec<[f32; 2]>],
         patchs: &Tensor,
         masks: &Tensor,
     ) -> polars::prelude::DataFrame {
@@ -281,8 +281,8 @@ pub struct GLRLMFeatureSet;
 impl FeatureSet for GLRLMFeatureSet {
     fn compute_features_batched(
         &self,
-        centroids: &Vec<[f32; 2]>,
-        _polygons: &Vec<Vec<[f32; 2]>>,
+        centroids: &[[f32; 2]],
+        _polygons: &[Vec<[f32; 2]>],
         patchs: &Tensor,
         masks: &Tensor,
     ) -> DataFrame {
@@ -517,8 +517,8 @@ const FREQUENCIES: [f64; 6] = [0.5, 1.0, 2.0, 4.0, 6.0, 8.0];
 impl FeatureSet for GaborFilterFeatureSet {
     fn compute_features_batched(
         &self,
-        centroids: &Vec<[f32; 2]>,
-        _polygons: &Vec<Vec<[f32; 2]>>,
+        centroids: &[[f32; 2]],
+        _polygons: &[Vec<[f32; 2]>],
         patchs: &Tensor,
         masks: &Tensor,
     ) -> DataFrame {

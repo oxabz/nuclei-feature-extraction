@@ -8,7 +8,7 @@ use tch::Tensor;
 pub trait FeatureSet : Send + Sync {
     fn name(&self)->&str;
 
-    fn compute_features_batched(&self, centroids: &Vec<[f32; 2]>, polygons: &Vec<Vec<[f32; 2]>>, patchs: &Tensor, masks: &Tensor) -> DataFrame;
+    fn compute_features_batched(&self, centroids: &[[f32; 2]], polygons: &[Vec<[f32; 2]>], patchs: &Tensor, masks: &Tensor) -> DataFrame;
 }
 
 pub use color::ColorFeatureSet;

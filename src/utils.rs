@@ -78,7 +78,7 @@ pub(crate) fn load_slides(
     ) -> (Vec<[f32;2]>, Vec<Vec<[f32;2]>>, Tensor, Tensor){
     let slide = slide.lock().unwrap();
     let start = std::time::Instant::now();
-    let (centroid_poly, patch_mask) : (Vec<_>, Vec<_>) = features.into_iter()
+    let (centroid_poly, patch_mask) : (Vec<_>, Vec<_>) = features.iter()
         .map(preprocess_polygon)
         .filter_map(|(centroid, centered_polygone)|{
             let mask = tch_utils::shapes::polygon(patch_size, patch_size, &centered_polygone.to_tchutils_points(), (Kind::Float, Device::Cpu));
@@ -96,7 +96,7 @@ pub(crate) fn load_slides(
             match patch {
                 Ok(ok) => {
                     let mut tensor = Tensor::from_image(ok.into()).i(..3);
-                    if tensor.size().as_slice() != &[3, patch_size as i64, patch_size as i64] {
+                    if *tensor.size().as_slice() != [3, patch_size as i64, patch_size as i64] {
                         let padded = Tensor::zeros(&[3, patch_size as i64, patch_size as i64], (Kind::Float, Device::Cpu));
                         padded.i((..tensor.size()[0], ..tensor.size()[1], ..tensor.size()[2])).copy_(&tensor);
                         tensor = padded;
@@ -133,6 +133,6 @@ pub fn centroid_to_key_string(centroid: &[f32; 2]) -> String {
     format!("{:1},{:1}", centroid[0], centroid[1])
 }
 
-pub fn centroids_to_key_strings(centroids: &Vec<[f32; 2]>) -> Vec<String> {
+pub fn centroids_to_key_strings(centroids: &[[f32; 2]]) -> Vec<String> {
     centroids.iter().map(centroid_to_key_string).collect()
 }
