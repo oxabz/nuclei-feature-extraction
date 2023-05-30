@@ -55,10 +55,10 @@ fn main(){
         .map(|(centroids, polygones, patches, masks)|{
             let features = feature_sets.iter()
                 .map(|fs|{
-                    debug!("Computing {} features for {} patches", fs.name(), centroids.len());
+                    debug!("Computing {} features for {} patches (thrd:{})", fs.name(), centroids.len(), rayon::current_thread_index().unwrap_or(0));
                     let start = std::time::Instant::now();
                     let features = fs.compute_features_batched(&centroids, &polygones, &patches, &masks);
-                    debug!("Computed {} features for {} patches in {:?}", fs.name(), centroids.len(), start.elapsed());
+                    debug!("Computed {} features for {} patches in {:?} (thrd:{})", fs.name(), centroids.len(), start.elapsed(), rayon::current_thread_index().unwrap_or(0));
                     features
                 })
                 .collect::<Vec<_>>();
