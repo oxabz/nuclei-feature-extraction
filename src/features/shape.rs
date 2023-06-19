@@ -63,13 +63,14 @@ impl FeatureSet for ShapeFeatureSet {
                 (Kind::Float, device),
             );
 
-            let hull = convex_hull(polygon);
+            let hull = graham_scan(polygon);
 
             let mut centroid = center_of_mass(&mask);
             centroid[0] -= patch_size as f32 / 2.0;
             centroid[1] -= patch_size as f32 / 2.0;
             let centroid = centroid;
 
+            #[allow(unused_variables)]
             let (major_axis, minor_axis, angle, eigen) = major_minor_axes_w_angle(&mask);
             let eccentricity = eccentricity(major_axis, minor_axis);
             let orientation = angle;
@@ -258,55 +259,57 @@ pub(crate) fn convex_hull_stats(mask: &Tensor, hull: &Tensor) -> (f32, f32) {
     )
 }
 
-pub(crate) fn convex_hull(points: &Vec<[f32; 2]>) -> Vec<[f32; 2]> {
-    // Creating the convex hull with the graham scan algorithm
-    assert!(points.len() > 2, "Convex hull must have at least 3 points");
-    let mut points = points.clone();
-    let p = points
-        .iter()
-        .enumerate()
-        .min_by(|(_, a), (_, b)| {
-            a[1].partial_cmp(&b[1])
-                .unwrap()
-                .then(a[0].partial_cmp(&b[0]).unwrap())
-        })
-        .unwrap()
-        .0;
-    let p = points.remove(p);
+pub(crate) fn graham_scan(points: &[[f32;2]]) -> Vec<[f32;2]> {
+    let mut points = points.to_vec();
 
-    points.sort_by(|a, b| {
-        // Using cos to sorts points by angle
-        let aa = (a[1] - p[1]).cos();
-        let ab = (b[1] - p[1]).cos();
+    let [mut min_x, mut min_y] = points[0];
+    let mut min_i = 0;
+    for (i, point) in points.iter().enumerate() {
+        let [x, y] = *point;
+        if y < min_y {
+            min_y = y;
+            min_x = x;
+            min_i = i;
+        } else if y == min_y && x < min_x {
+            min_x = x;
+            min_i = i;
+        }
+    }
+    let p = points.remove(min_i);
+    
+    let mut points = points
+        .into_iter()
+        .map(|[x, y]|([x, y], x - p[0], y - p[1]))
+        .map(|(p, dx, dy)| (p, (dx.powi(2) + dy.powi(2)).sqrt(), dx))
+        .map(|(p, len, dot)| (p, len, - dot / len))
+        .filter(|(_, len, _)| *len > 0.0)
+        .collect::<Vec<_>>();
 
-        aa.partial_cmp(&ab).unwrap().then_with(|| {
-            // Using manhattan distance to break ties
-            let da = (p[0] - a[0]).abs().max((p[1] - a[1]).abs());
-            let db = (p[0] - b[0]).abs().max((p[1] - b[1]).abs());
-            db.partial_cmp(&da).unwrap()
-        })
-    });
+    points.sort_by(|(_, al, aa), (_, bl, ba)| aa.partial_cmp(ba).unwrap().then(al.partial_cmp(bl).unwrap()));
 
-    let mut hull = vec![p, points[0]];
-    for p in points.iter().skip(1) {
+    let mut hull = vec![p];
+    for (p, _, _) in points {
         while hull.len() > 1 {
-            let a = hull[hull.len() - 2];
-            let b = hull[hull.len() - 1];
-            let c = *p;
-            let cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-            if cross < 0.0 {
-                hull.pop();
-            } else {
+            let [ax, ay] = hull[hull.len() - 2];
+            let [bx, by] = hull[hull.len() - 1];
+            let [cx, cy] = p;
+            let ab = (bx - ax, by - ay);
+            let bc = (cx - bx, cy - by);
+            let cross = ab.0 * bc.1 - ab.1 * bc.0;
+            if cross > 0.0 {
                 break;
             }
+            hull.pop();
         }
-        hull.push(*p);
+        hull.push(p);
     }
-    hull
+
+    hull 
+    
 }
 
 pub(crate) fn equivalent_perimeter(area: f32) -> f32 {
-    (std::f32::consts::PI / area).sqrt() * 2.0
+    ( area / std::f32::consts::PI ).sqrt() * 2.0 * std::f32::consts::PI
 }
 
 pub(crate) fn compacity(area: f32, perimeter: f32) -> f32 {
