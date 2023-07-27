@@ -71,7 +71,7 @@ pub(crate) fn preprocess_polygon(feature: &geojson::Feature) -> ([f32; 2], Vec<[
 /**
 Takes a chunk of geojson features and returns a tuple of tensors containing the patches and the masks
  */
-pub(crate) fn load_slides(
+pub(crate) fn load_slide_dataset(
     features:&[geojson::Feature], 
     slide: Arc<Mutex<OpenSlide>>, 
     patch_size: usize
@@ -107,6 +107,52 @@ pub(crate) fn load_slides(
                     None
                 },
             }
+        })
+        .unzip();
+    let (centroids, polygone): (Vec<_>, Vec<_>) = centroid_poly.into_iter().unzip();
+    let (patches, masks):(Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
+    let patches = Tensor::stack(&patches, 0);
+    let masks = Tensor::stack(&masks, 0);
+    debug!("Loaded {} patch in {:?}", patches.size()[0], start.elapsed());
+    (centroids, polygone, patches, masks)
+}
+
+pub(crate) fn load_image_dataset(
+    features:&[geojson::Feature], 
+    image: Arc<Mutex<Tensor>>, 
+    patch_size: usize
+) -> (Vec<[f32;2]>, Vec<Vec<[f32;2]>>, Tensor, Tensor) {
+    let image = image.lock().unwrap();
+    let start = std::time::Instant::now();
+    let (centroid_poly, patch_mask) : (Vec<_>, Vec<_>) = features.iter()
+        .map(preprocess_polygon)
+        .map(|(centroid, centered_polygone)|{
+            let mask = tch_utils::shapes::polygon(patch_size, patch_size, &centered_polygone.to_tchutils_points(), (Kind::Float, Device::Cpu));
+            
+            let top = (centroid[1] - patch_size as f32 / 2.0) as i64;
+            let left = (centroid[0] - patch_size as f32 / 2.0) as i64;
+            let bottom = (centroid[1] + patch_size as f32 / 2.0) as i64;
+            let right = (centroid[0] + patch_size as f32 / 2.0) as i64;
+
+            let mut patch = image.i((.., 
+                top.max(0)..bottom.min(image.size()[1]), 
+                left.max(0)..right.min(image.size()[2])
+            )).copy();
+
+            if patch.size()[1] != patch_size as i64 || patch.size()[2] != patch_size as i64 {
+                let padded = Tensor::zeros(&[3, patch_size as i64, patch_size as i64], (Kind::Float, Device::Cpu));
+                
+                let offset_y = - top.min(0);
+                let offset_x = - left.min(0);
+
+                padded.i((.., 
+                    offset_y..offset_y + patch.size()[1], 
+                    offset_x..offset_x + patch.size()[2]
+                )).copy_(&patch);
+
+                patch = padded;
+            }
+            ((centroid, centered_polygone), (patch, mask))
         })
         .unzip();
     let (centroids, polygone): (Vec<_>, Vec<_>) = centroid_poly.into_iter().unzip();

@@ -7,7 +7,28 @@ use log::{error, debug, info};
 use args::{ARGS, Args};
 use polars::prelude::*;
 use rayon::prelude::*;
+use tch::Tensor;
 
+#[derive(Clone)]
+enum InputImage {
+    Slide(Arc<Mutex<openslide_rs::OpenSlide>>),
+    Image(Arc<Mutex<Tensor>>),
+}
+
+fn load_input_image()-> InputImage {
+    match ARGS.slide.extension().and_then(|ext|ext.to_str()) {
+        Some("svs") => {
+            InputImage::Slide(Arc::new(Mutex::new(openslide_rs::OpenSlide::new(&ARGS.slide).unwrap())))
+        },
+        Some("png") | Some("jpg") | Some("jpeg") => {
+            InputImage::Image(Arc::new(Mutex::new(tch::vision::image::load(&ARGS.slide).unwrap())))
+        },
+        _ => {
+            error!("Unsupported input format. Please use one of the following : svs, ndpi, tiff, vms, vmu, bif, mrxs, scn, svslide, tif, png, jpg, jpeg, tif, tiff, webp, pnm, dds, exr, gif, hdr, ico, tga, bmp, jpg, jpeg, png, ppm, pgm, pnm, pbm, tiff, tif, webp, jp2, j2k, jpf, jpx, jpm, mj2");
+            exit(1);
+        }
+    }
+}
 
 fn load_slide()-> openslide_rs::OpenSlide {
     openslide_rs::OpenSlide::new(&ARGS.slide).unwrap()
@@ -35,8 +56,8 @@ fn main(){
     debug!("Loaded geojson in {:?}", start.elapsed());
 
     // Loading the slide
-    let slide = load_slide();
-    let slide = Arc::new(Mutex::new(slide));
+    let input_image = load_input_image();
+    
 
     let Args {  output, patch_size, gpus, batch_size, feature_sets, .. } = ARGS.clone();
     let patch_size = patch_size as usize;
@@ -50,7 +71,12 @@ fn main(){
     let done = AtomicU32::new(0);
     geometry.features
         .par_chunks(batch_size)
-        .map(|nuclei| utils::load_slides(nuclei, slide.clone(), patch_size))
+        .map(move |nuclei| {
+            match &input_image {
+                InputImage::Slide(slide) => utils::load_slide_dataset(nuclei, slide.clone(), patch_size),
+                InputImage::Image(image) => utils::load_image_dataset(nuclei, image.clone(), patch_size)
+            }
+        })
         .map(|x| utils::move_tensors_to_device(x, gpus.clone()))
         .map(|(centroids, polygones, patches, masks)|{
             let features = feature_sets.iter()
