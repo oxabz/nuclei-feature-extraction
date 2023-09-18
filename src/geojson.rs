@@ -3,22 +3,22 @@
 This module contains the struct definition for the GeoJSON format.
 They are use to deserialize the GeoJSON file into a Rust struct.
  */
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct Geometry{
-  #[serde(rename="type")]
-  pub(crate) typ:String,
-  pub(crate) coordinates: Vec<Vec<Vec<f32>>>
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct Geometry {
+    #[serde(rename = "type")]
+    pub(crate) typ: String,
+    pub(crate) coordinates: Vec<Vec<Vec<f32>>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Feature {
-  pub(crate) bbox: Vec<f32>,
-  pub(crate) geometry:Geometry,
+    pub(crate) bbox: Vec<f32>,
+    pub(crate) geometry: Geometry,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct FeatureCollection {
-  pub(crate) features: Vec<Feature>,
+    pub(crate) features: Vec<Feature>,
 }
