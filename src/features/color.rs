@@ -1,5 +1,5 @@
 use polars::prelude::*;
-use tch::{Tensor};
+use tch::Tensor;
 
 use crate::utils::centroids_to_key_strings;
 
@@ -7,15 +7,39 @@ use super::FeatureSet;
 
 pub struct ColorFeatureSet;
 
-impl FeatureSet for ColorFeatureSet{
-    fn compute_features_batched(&self, centroids: &[[f32; 2]], polygons: &[Vec<[f32; 2]>], patchs: &Tensor, masks: &Tensor) -> polars::prelude::DataFrame {
-        assert!(patchs.size().len() == 4, "The patchs tensor must be 4 dimensional");
-        assert!(masks.size().len() == 4, "The masks tensor must be 4 dimensional");
-        assert!(patchs.size()[1] == 3, "The patchs tensor must have 3 channels");
+impl FeatureSet for ColorFeatureSet {
+    fn compute_features_batched(
+        &self,
+        centroids: &[[f32; 2]],
+        polygons: &[Vec<[f32; 2]>],
+        patchs: &Tensor,
+        masks: &Tensor,
+    ) -> polars::prelude::DataFrame {
+        assert!(
+            patchs.size().len() == 4,
+            "The patchs tensor must be 4 dimensional"
+        );
+        assert!(
+            masks.size().len() == 4,
+            "The masks tensor must be 4 dimensional"
+        );
+        assert!(
+            patchs.size()[1] == 3,
+            "The patchs tensor must have 3 channels"
+        );
         assert!(masks.size()[1] == 1, "The masks tensor must have 1 channel");
-        assert!(patchs.size()[0] == masks.size()[0], "The number of patchs and masks must be the same");
-        assert!(patchs.size()[0] as usize == centroids.len(), "The number of patchs and centroids must be the same");
-        assert!(patchs.size()[0] as usize == polygons.len(), "The number of patchs and polygons must be the same");
+        assert!(
+            patchs.size()[0] == masks.size()[0],
+            "The number of patchs and masks must be the same"
+        );
+        assert!(
+            patchs.size()[0] as usize == centroids.len(),
+            "The number of patchs and centroids must be the same"
+        );
+        assert!(
+            patchs.size()[0] as usize == polygons.len(),
+            "The number of patchs and polygons must be the same"
+        );
 
         let _ = tch::no_grad_guard();
         let hsv = tch_utils::color::hsv_from_rgb(patchs);
@@ -73,10 +97,11 @@ impl FeatureSet for ColorFeatureSet{
             "std_haematoxylin" => std_haematoxylin,
             "std_eosin" => std_eosin,
             "std_dab" => std_dab,
-        ).expect("Could not create the dataframe")
+        )
+        .expect("Could not create the dataframe")
     }
 
-    fn name(&self)->&str {
+    fn name(&self) -> &str {
         "color"
     }
 }
@@ -89,7 +114,7 @@ Compute the mean and standard deviation of the color channels of the image.
 # Returns
 - `mean` - [N, 3] tensor
  */
-pub fn mean_std(img: &Tensor, mask: &Tensor) ->  (Tensor, Tensor){
+pub fn mean_std(img: &Tensor, mask: &Tensor) -> (Tensor, Tensor) {
     let masked /* [N, 3, H, W] */ = img * mask;
     let mask_area /* [N, 3, 1, 1] */ = mask.sum_dim_intlist(Some(&[-1i64, -2][..]), true, tch::Kind::Float);
     let mut mean /* [N, 3, 1, 1] */ = masked.sum_dim_intlist( Some(&[-1i64, -2][..]), true, tch::Kind::Float);
@@ -104,7 +129,7 @@ pub fn mean_std(img: &Tensor, mask: &Tensor) ->  (Tensor, Tensor){
 
     let _ = std.squeeze_(); // [N, 3, 1, 1] -> [N, 3]
     let _ = mean.squeeze_(); // [N, 3, 1, 1] -> [N, 3]
-    
+
     (mean, std)
 }
 
@@ -118,13 +143,13 @@ Compute the mean deviation of the image.
  */
 pub fn circular_mean(image: &Tensor, mask: &Tensor) -> Tensor {
     let mask_area = mask.sum_dim_intlist(Some(&[-1, -2, -3][..]), false, tch::Kind::Float);
-    
+
     let img = image.deg2rad();
     let cos = img.cos() * mask;
     let sin = img.sin() * mask;
 
-    let cos = cos.sum_dim_intlist(Some(&[-1,-2, -3][..]), false, tch::Kind::Float) / &mask_area;
-    let sin = sin.sum_dim_intlist(Some(&[-1,-2, -3][..]), false, tch::Kind::Float) / &mask_area;
-    
+    let cos = cos.sum_dim_intlist(Some(&[-1, -2, -3][..]), false, tch::Kind::Float) / &mask_area;
+    let sin = sin.sum_dim_intlist(Some(&[-1, -2, -3][..]), false, tch::Kind::Float) / &mask_area;
+
     (sin.atan2(&cos).rad2deg_() + 360.0).fmod_(360.0)
 }
