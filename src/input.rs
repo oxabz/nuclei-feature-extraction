@@ -10,9 +10,9 @@ pub enum InputImage {
     Image(Arc<Mutex<Tensor>>),
 }
 
-pub type BatchLoader = Box<dyn for<'a> Fn(&'a [Feature]) -> Batch + Send + Sync>;
+pub(crate) type BatchLoader = Box<dyn for<'a> Fn(&'a [Feature]) -> Batch + Send + Sync>;
 impl InputImage {
-    pub fn patch_loader(&self, patch_size: usize) -> BatchLoader {
+    pub(crate) fn patch_loader(&self, patch_size: usize) -> BatchLoader {
         match self {
             InputImage::Slide(slide) => {
                 let slide = slide.clone();
