@@ -8,6 +8,10 @@ default-run = "nuclei-feature-extraction"
 name = "nuclei-feature-extraction"
 path = "src/main.rs"
 
+[[bin]]
+name = "filter-geojson"
+path = "src/filter_geojson.rs"
+
 # we need to add a dummy bin in docker to build dependencies first (see https://stackoverflow.com/questions/58473606/cache-rust-dependencies-with-docker-build)
 # [[dummy placeholder]]
 
@@ -27,6 +31,7 @@ rayon = "1.6.1"
 image = "0.24"
 tch = "0.11"
 tch-utils = {git="https://github.com/oxabz/tch-utils.git", default-features = false, features=["image"]}
+geometric-features = {git = "https://github.com/oxabz/geometric-features-rs.git"}
 # Misc
 lazy_static = "1.4"
 pretty_env_logger = "0.4"
