@@ -1,8 +1,8 @@
-use std::{sync::{Arc, Mutex}};
+use std::sync::{Arc, Mutex};
 
 use log::debug;
-use openslide_rs::{OpenSlide, Region, Size, traits::Slide};
-use tch::{Tensor, Device, Kind, index::*};
+use openslide_rs::{traits::Slide, OpenSlide, Region, Size};
+use tch::{index::*, Device, Kind, Tensor};
 use tch_utils::image::ImageTensorExt;
 
 use crate::geojson;
@@ -10,6 +10,11 @@ use crate::geojson;
 pub type CratePoint = [f32; 2];
 pub type TchUtilsPoint = (f64, f64);
 pub type Points = Vec<CratePoint>;
+
+/**
+ * A batch is a tuple containing the centroid of the polygon, the polygon itself, the corresponding patches and the masks of the polygon
+ */
+pub type Batch = (Vec<[f32; 2]>, Vec<Vec<[f32; 2]>>, Tensor, Tensor);
 
 pub trait CratePointExt {
     fn to_tchutils_point(&self) -> TchUtilsPoint;
@@ -72,23 +77,32 @@ pub(crate) fn preprocess_polygon(feature: &geojson::Feature) -> ([f32; 2], Vec<[
 Takes a chunk of geojson features and returns a tuple of tensors containing the patches and the masks
  */
 pub(crate) fn load_slide_dataset(
-    features:&[geojson::Feature], 
-    slide: Arc<Mutex<OpenSlide>>, 
-    patch_size: usize
-    ) -> (Vec<[f32;2]>, Vec<Vec<[f32;2]>>, Tensor, Tensor){
+    features: &[geojson::Feature],
+    slide: Arc<Mutex<OpenSlide>>,
+    patch_size: usize,
+) -> (Vec<[f32; 2]>, Vec<Vec<[f32; 2]>>, Tensor, Tensor) {
     let slide = slide.lock().unwrap();
     let start = std::time::Instant::now();
-    let (centroid_poly, patch_mask) : (Vec<_>, Vec<_>) = features.iter()
+    let (centroid_poly, patch_mask): (Vec<_>, Vec<_>) = features
+        .iter()
         .map(preprocess_polygon)
-        .filter_map(|(centroid, centered_polygone)|{
-            let mask = tch_utils::shapes::polygon(patch_size, patch_size, &centered_polygone.to_tchutils_points(), (Kind::Float, Device::Cpu));
+        .filter_map(|(centroid, centered_polygone)| {
+            let mask = tch_utils::shapes::polygon(
+                patch_size,
+                patch_size,
+                &centered_polygone.to_tchutils_points(),
+                (Kind::Float, Device::Cpu),
+            );
             let patch = {
-                let region = Region{
-                    size: Size{ w: patch_size as u32, h: patch_size as u32},
+                let region = Region {
+                    size: Size {
+                        w: patch_size as u32,
+                        h: patch_size as u32,
+                    },
                     level: 0,
-                    address: openslide_rs::Address { 
-                        x: (centroid[0] - patch_size as f32 / 2.0) as u32, 
-                        y: (centroid[1] - patch_size as f32 / 2.0) as u32
+                    address: openslide_rs::Address {
+                        x: (centroid[0] - patch_size as f32 / 2.0) as u32,
+                        y: (centroid[1] - patch_size as f32 / 2.0) as u32,
                     },
                 };
                 slide.read_image_rgb(&region)
@@ -97,58 +111,82 @@ pub(crate) fn load_slide_dataset(
                 Ok(ok) => {
                     let mut tensor = Tensor::from_image(ok.into()).i(..3);
                     if *tensor.size().as_slice() != [3, patch_size as i64, patch_size as i64] {
-                        let padded = Tensor::zeros(&[3, patch_size as i64, patch_size as i64], (Kind::Float, Device::Cpu));
-                        padded.i((..tensor.size()[0], ..tensor.size()[1], ..tensor.size()[2])).copy_(&tensor);
+                        let padded = Tensor::zeros(
+                            &[3, patch_size as i64, patch_size as i64],
+                            (Kind::Float, Device::Cpu),
+                        );
+                        padded
+                            .i((..tensor.size()[0], ..tensor.size()[1], ..tensor.size()[2]))
+                            .copy_(&tensor);
                         tensor = padded;
                     }
                     Some(((centroid, centered_polygone), (tensor, mask)))
-                },
-                Err(_) => {
-                    None
-                },
+                }
+                Err(_) => None,
             }
         })
         .unzip();
     let (centroids, polygone): (Vec<_>, Vec<_>) = centroid_poly.into_iter().unzip();
-    let (patches, masks):(Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
+    let (patches, masks): (Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
     let patches = Tensor::stack(&patches, 0);
     let masks = Tensor::stack(&masks, 0);
-    debug!("Loaded {} patch in {:?}", patches.size()[0], start.elapsed());
+    debug!(
+        "Loaded {} patch in {:?}",
+        patches.size()[0],
+        start.elapsed()
+    );
     (centroids, polygone, patches, masks)
 }
 
 pub(crate) fn load_image_dataset(
-    features:&[geojson::Feature], 
-    image: Arc<Mutex<Tensor>>, 
-    patch_size: usize
-) -> (Vec<[f32;2]>, Vec<Vec<[f32;2]>>, Tensor, Tensor) {
+    features: &[geojson::Feature],
+    image: Arc<Mutex<Tensor>>,
+    patch_size: usize,
+) -> (Vec<[f32; 2]>, Vec<Vec<[f32; 2]>>, Tensor, Tensor) {
     let image = image.lock().unwrap();
     let start = std::time::Instant::now();
-    let (centroid_poly, patch_mask) : (Vec<_>, Vec<_>) = features.iter()
+    let (centroid_poly, patch_mask): (Vec<_>, Vec<_>) = features
+        .iter()
         .map(preprocess_polygon)
-        .map(|(centroid, centered_polygone)|{
-            let mask = tch_utils::shapes::polygon(patch_size, patch_size, &centered_polygone.to_tchutils_points(), (Kind::Float, Device::Cpu));
-            
+        .map(|(centroid, centered_polygone)| {
+            let mask = tch_utils::shapes::polygon(
+                patch_size,
+                patch_size,
+                &centered_polygone.to_tchutils_points(),
+                (Kind::Float, Device::Cpu),
+            );
+
             let top = (centroid[1] - patch_size as f32 / 2.0) as i64;
             let left = (centroid[0] - patch_size as f32 / 2.0) as i64;
             let bottom = (centroid[1] + patch_size as f32 / 2.0) as i64;
             let right = (centroid[0] + patch_size as f32 / 2.0) as i64;
 
-            let mut patch = image.i((.., 
-                top.max(0)..bottom.min(image.size()[1]), 
-                left.max(0)..right.min(image.size()[2])
-            )).copy();
+            let mut patch = image
+                .i((
+                    ..,
+                    top.max(0)..bottom.min(image.size()[1]),
+                    left.max(0)..right.min(image.size()[2]),
+                ))
+                .copy();
+
+            patch = patch.to_kind(Kind::Float) / 255.0;
 
             if patch.size()[1] != patch_size as i64 || patch.size()[2] != patch_size as i64 {
-                let padded = Tensor::zeros(&[3, patch_size as i64, patch_size as i64], (Kind::Float, Device::Cpu));
-                
-                let offset_y = - top.min(0);
-                let offset_x = - left.min(0);
+                let padded = Tensor::zeros(
+                    &[3, patch_size as i64, patch_size as i64],
+                    (Kind::Float, Device::Cpu),
+                );
 
-                padded.i((.., 
-                    offset_y..offset_y + patch.size()[1], 
-                    offset_x..offset_x + patch.size()[2]
-                )).copy_(&patch);
+                let offset_y = -top.min(0);
+                let offset_x = -left.min(0);
+
+                padded
+                    .i((
+                        ..,
+                        offset_y..offset_y + patch.size()[1],
+                        offset_x..offset_x + patch.size()[2],
+                    ))
+                    .copy_(&patch);
 
                 patch = padded;
             }
@@ -156,24 +194,35 @@ pub(crate) fn load_image_dataset(
         })
         .unzip();
     let (centroids, polygone): (Vec<_>, Vec<_>) = centroid_poly.into_iter().unzip();
-    let (patches, masks):(Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
+    let (patches, masks): (Vec<_>, Vec<_>) = patch_mask.into_iter().unzip();
     let patches = Tensor::stack(&patches, 0);
     let masks = Tensor::stack(&masks, 0);
-    debug!("Loaded {} patch in {:?}", patches.size()[0], start.elapsed());
+    debug!(
+        "Loaded {} patch in {:?}",
+        patches.size()[0],
+        start.elapsed()
+    );
     (centroids, polygone, patches, masks)
 }
 
-pub(crate) fn move_tensors_to_device((centroid, poly, mut patches, mut masks):(Vec<[f32;2]>, Vec<Vec<[f32;2]>>, Tensor, Tensor), gpus: Option<Vec<usize>>) -> (Vec<[f32;2]>, Vec<Vec<[f32;2]>>, Tensor, Tensor){
-    if let Some (gpus) = &gpus {
+/**
+Move the tensors to the device.
+ */
+pub(crate) fn move_tensors_to_device(
+    (centroid, poly, mut patches, mut masks): (Vec<[f32; 2]>, Vec<Vec<[f32; 2]>>, Tensor, Tensor),
+    gpus: Option<Vec<usize>>,
+) -> (Vec<[f32; 2]>, Vec<Vec<[f32; 2]>>, Tensor, Tensor) {
+    if let Some(gpus) = &gpus {
         let gpus = gpus.clone();
         let gpu_count = gpus.len();
         let gpu_idx = rayon::current_thread_index().unwrap_or(0) % gpu_count;
         patches = patches.to_device(Device::Cuda(gpus[gpu_idx]));
         masks = masks.to_device(Device::Cuda(gpus[gpu_idx]));
     }
-    
+
     (centroid, poly, patches, masks)
 }
+
 
 pub fn centroid_to_key_string(centroid: &[f32; 2]) -> String {
     format!("{:1},{:1}", centroid[0], centroid[1])
