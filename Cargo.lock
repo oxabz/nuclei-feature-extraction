@@ -668,9 +668,9 @@ dependencies = [
 
 [[package]]
 name = "dyn-clone"
-version = "1.0.13"
+version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbfc4744c1b8f2a09adc0e55242f60b1af195d88596bd8700be74418c056c555"
+checksum = "23d2f3407d9a573d666de4b5bdf10569d73ca9478087346697dcbae6244bfbcd"
 
 [[package]]
 name = "either"
@@ -932,7 +932,7 @@ dependencies = [
 [[package]]
 name = "geometric-features"
 version = "0.1.0"
-source = "git+https://github.com/oxabz/geometric-features-rs.git#709b7d382e4342ef30bc755afd342e4d2dbd3b05"
+source = "git+https://github.com/oxabz/geometric-features-rs.git#163ae816b38e86abfe019a7ca1d738d0c1e83ed2"
 
 [[package]]
 name = "getrandom"
@@ -2590,7 +2590,7 @@ dependencies = [
 [[package]]
 name = "tch-utils"
 version = "0.1.1"
-source = "git+https://github.com/oxabz/tch-utils.git#e2e3eee1c9c0a8f98e5817bcbe5cedc8292d5524"
+source = "git+https://github.com/oxabz/tch-utils.git#d1c10c0b973167bec54670eb045bf729eae8df9a"
 dependencies = [
  "image",
  "rand",
@@ -2599,9 +2599,9 @@ dependencies = [
 
 [[package]]
 name = "termcolor"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be55cf8942feac5c765c2c993422806843c9a9a45d4d5c407ad6dd2ea95eb9b6"
+checksum = "6093bad37da69aab9d123a8091e4be0aa4a03e4d601ec641c327398315f62b64"
 dependencies = [
  "winapi-util",
 ]

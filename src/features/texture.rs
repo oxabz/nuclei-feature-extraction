@@ -3,7 +3,7 @@ use polars::{
     series::Series,
 };
 use tch::{index::*, Kind, Tensor};
-use tch_utils::{glcm::{glcm, features::*}, glrlm::glrlm, tensor_ext::TensorExt};
+use tch_utils::{glcm::{glcm, features::*}, glrlm::{glrlm, features::{GlrlmFeatures, glrlm_features}}, tensor_ext::TensorExt};
 
 use crate::utils::centroids_to_key_strings;
 
@@ -154,104 +154,8 @@ impl FeatureSet for GLRLMFeatureSet {
             let glrlm = glrlm(&gs, GLRLM_LEVELS, GLRLM_MAX_LENGTH, *direction, Some(masks))
                 .to_kind(Kind::Float);
 
-            // Number of runs [N]
-            let nruns = glrlm.sum_dim_intlist(Some(&[-1, -2][..]), false, Kind::Float);
-
-            // Gray Level Run-Length Vector [N, GLRLM_LEVELS]
-            let glrlv = { glrlm.sum_dim_intlist(Some(&[-1][..]), false, Kind::Float) };
-
-            // Run-length Run Number Vector [N, GLRLM_MAX_LENGTH]
-            let rlrnv = { glrlm.sum_dim_intlist(Some(&[-2][..]), false, Kind::Float) };
-
-            // Short Run Emphasis [N] & Long Run Emphasis [N]
-            let (short_run_emphasis, long_run_emphasis) = {
-                let j = Tensor::arange(GLRLM_MAX_LENGTH, (Kind::Float, patchs.device()))
-                    .unsqueeze(0)
-                    + 1.0;
-                let j2 = j.square();
-                let sre = &rlrnv / &j2;
-                let lre = &rlrnv * j2;
-                let sre = sre.sum_dim_intlist(Some(&[-1][..]), false, Kind::Float) / &nruns;
-                let lre = lre.sum_dim_intlist(Some(&[-1][..]), false, Kind::Float) / &nruns;
-                (sre, lre)
-            };
-
-            // Gray-Level Nonuniformity [N]
-            let gray_level_nonuniformity = { glrlv.square().sum_dim(-1) / &nruns };
-
-            // Run-Length Nonuniformity [N]
-            let run_length_nonuniformity = { rlrnv.square().sum_dim(-1) / &nruns };
-
-            // Run Percentage [N]
-            let run_percentage = {
-                let pix = masks.sum_dims([-3, -2, -1]);
-                &nruns / pix
-            };
-
-            // Low Gray-Level Run Emphasis [N] & High Gray-Level Run Emphasis [N]
-            let (low_gray_level_run_emphasis, high_gray_level_run_emphasis) = {
-                let i = Tensor::arange(GLRLM_LEVELS as i64, (Kind::Float, patchs.device()))
-                    .unsqueeze(0)
-                    + 0.5;
-                let lglre = &glrlv / i.square();
-                let hglre = &glrlv * i.square();
-                (lglre.sum_dim(-1) / &nruns, hglre.sum_dim(-1) / &nruns)
-            };
-
-            // Short Run Low Gray-Level Emphasis & Short Run High Gray-Level Emphasis & Long Run Low Gray-Level Emphasis & Long Run High Gray-Level Emphasis
-            // Short Run Mid Gray-Level Empahsis & Long Run Mid Gray-Level Empahsis & Short Run Extreme Gray-Level Empahsis & Long Run Extreme Gray-Level Empahsis (I made it up)
-            let (
-                short_run_low_gray_level_emphasis,
-                short_run_high_gray_level_emphasis,
-                long_run_low_gray_level_emphasis,
-                long_run_high_gray_level_emphasis,
-                short_run_mid_gray_level_emphasis,
-                long_run_mid_gray_level_emphasis,
-                short_run_extreme_gray_level_emphasis,
-                long_run_extreme_gray_level_emphasis,
-            ) = {
-                let j = Tensor::arange(GLRLM_MAX_LENGTH, (Kind::Float, patchs.device())) + 1.0;
-                let j = j.view([1, 1, -1]);
-                let j2 = j.square();
-                let i = Tensor::arange(GLRLM_LEVELS as i64, (Kind::Float, patchs.device())) + 0.5;
-                let i = i.view([1, -1, 1]);
-                let i2 = i.square();
-                let srlgle = &glrlm / (&i2 * &j2);
-                let srhgle = &glrlm * &i2 / &j2;
-                let lrlgle = &glrlm * &j2 / &i2;
-                let lrhgle = &glrlm * i2 * &j2;
-                let i = Tensor::arange(GLRLM_LEVELS as i64, (Kind::Float, patchs.device()))
-                    - GLRLM_LEVELS as f64 / 2.0
-                    + 0.5;
-                let i = i.view([1, -1, 1]);
-                let i2 = i.square();
-                let srmgle = &glrlm / (&i2 * &j2);
-                let lrmgle = &glrlm * &j2 / &i2;
-                let srengle = &glrlm / (&i2 * &j2);
-                let lrengle = &glrlm * &i2 * &j2;
-                (
-                    srlgle.sum_dims([-1, -2]) / &nruns,
-                    srhgle.sum_dims([-1, -2]) / &nruns,
-                    lrlgle.sum_dims([-1, -2]) / &nruns,
-                    lrhgle.sum_dims([-1, -2]) / &nruns,
-                    srmgle.sum_dims([-1, -2]) / &nruns,
-                    lrmgle.sum_dims([-1, -2]) / &nruns,
-                    srengle.sum_dims([-1, -2]) / &nruns,
-                    lrengle.sum_dims([-1, -2]) / &nruns,
-                )
-            };
-
-            let (run_length_mean, run_length_variance) = {
-                let j = Tensor::arange(GLRLM_MAX_LENGTH, (Kind::Float, patchs.device())) + 1.0;
-                let j = j.view([1, 1, -1]);
-                let rlmean = (&glrlm * &j).mean_dim(Some(&[-2, -1][..]), false, Kind::Float);
-                let rlvar = (glrlm * &j - &rlmean.view([-1, 1, 1])).square().mean_dim(
-                    Some(&[-2, -1][..]),
-                    false,
-                    Kind::Float,
-                );
-                (rlmean, rlvar)
-            };
+            let pixel_count = masks.sum_dims([-3, -2, -1]);
+            let GlrlmFeatures { run_percentage, run_length_mean, run_length_variance, gray_level_non_uniformity, run_length_non_uniformity, short_run_emphasis, long_run_emphasis, low_gray_level_run_emphasis, high_gray_level_run_emphasis, short_run_low_gray_level_emphasis, short_run_high_gray_level_emphasis, long_run_low_gray_level_emphasis, long_run_high_gray_level_emphasis, short_run_mid_gray_level_emphasis, long_run_mid_gray_level_emphasis, short_run_extreme_gray_level_emphasis, long_run_extreme_gray_level_emphasis } = glrlm_features(&glrlm, Some(&pixel_count));
 
             vec![
                 Series::new(
@@ -264,11 +168,11 @@ impl FeatureSet for GLRLMFeatureSet {
                 ),
                 Series::new(
                     &format!("gray_level_nonuniformity_{}_{}", direction.0, direction.1),
-                    Vec::<f32>::from(gray_level_nonuniformity),
+                    Vec::<f32>::from(gray_level_non_uniformity),
                 ),
                 Series::new(
                     &format!("run_length_nonuniformity_{}_{}", direction.0, direction.1),
-                    Vec::<f32>::from(run_length_nonuniformity),
+                    Vec::<f32>::from(run_length_non_uniformity),
                 ),
                 Series::new(
                     &format!(
