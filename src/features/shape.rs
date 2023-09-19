@@ -10,7 +10,6 @@ use crate::utils::{centroids_to_key_strings, PointsExt};
 
 use super::FeatureSet;
 
-
 pub struct ShapeFeatureSet;
 
 impl FeatureSet for ShapeFeatureSet {
@@ -91,8 +90,11 @@ impl FeatureSet for ShapeFeatureSet {
             let perimeter = geometric_features::perimeter(&polygon);
             let equivalent_perimeter = geometric_features::equivalent_perimeter(&polygon);
             let compacity = geometric_features::compacity(&polygon);
-            let geometric_features::convex_hull::ConvexHullFeatures{ area: convex_area, perimeter:convex_perimeter, deviation:convex_deffect } = geometric_features::convex_hull::convex_hull_features(&polygon);
-
+            let geometric_features::convex_hull::ConvexHullFeatures {
+                area: convex_area,
+                perimeter: convex_perimeter,
+                deviation: convex_deffect,
+            } = geometric_features::convex_hull::convex_hull_features(&polygon);
 
             larea_.push(area);
             lmajor_axis.push(major_axis);
@@ -136,9 +138,13 @@ pub(crate) fn area(mask: &Tensor) -> f32 {
     f32::from(mask.sum(tch::Kind::Float))
 }
 
-
 pub(crate) fn major_minor_axes_w_angle(mask: &Tensor) -> (f32, f32, f32, Tensor) {
-    let bail_return: (f32, f32, f32, Tensor) = (f32::NAN, f32::NAN, f32::NAN, Tensor::zeros(&[2, 2], (Kind::Float, tch::Device::Cpu)));
+    let bail_return: (f32, f32, f32, Tensor) = (
+        f32::NAN,
+        f32::NAN,
+        f32::NAN,
+        Tensor::zeros(&[2, 2], (Kind::Float, tch::Device::Cpu)),
+    );
 
     let nz = mask.squeeze().nonzero();
     let centroid = nz.mean_dim(Some(vec![0].as_slice()), false, tch::Kind::Float);

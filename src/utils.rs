@@ -223,7 +223,6 @@ pub(crate) fn move_tensors_to_device(
     (centroid, poly, patches, masks)
 }
 
-
 pub fn centroid_to_key_string(centroid: &[f32; 2]) -> String {
     format!("{:1},{:1}", centroid[0], centroid[1])
 }

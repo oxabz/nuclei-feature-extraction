@@ -3,7 +3,14 @@ use polars::{
     series::Series,
 };
 use tch::{index::*, Kind, Tensor};
-use tch_utils::{glcm::{glcm, features::*}, glrlm::{glrlm, features::{GlrlmFeatures, glrlm_features}}, tensor_ext::TensorExt};
+use tch_utils::{
+    glcm::{features::*, glcm},
+    glrlm::{
+        features::{glrlm_features, GlrlmFeatures},
+        glrlm,
+    },
+    tensor_ext::TensorExt,
+};
 
 use crate::utils::centroids_to_key_strings;
 
@@ -30,9 +37,30 @@ impl FeatureSet for GlcmFeatureSet {
 
         for gray_level_count in GLCM_LEVELS {
             for offset in OFFSETS {
-                let glcm = glcm(&gray_scale_patch, offset, gray_level_count, Some(masks), true);
+                let glcm = glcm(
+                    &gray_scale_patch,
+                    offset,
+                    gray_level_count,
+                    Some(masks),
+                    true,
+                );
 
-                let GlcmFeatures { correlation, contrast, dissimilarity, entropy, angular_second_moment, sum_average, sum_variance, sum_entropy, sum_of_squares, inverse_difference_moment, difference_average, difference_variance, information_measure_of_correlation_1, information_measure_of_correlation_2 } = glcm_features(&glcm);
+                let GlcmFeatures {
+                    correlation,
+                    contrast,
+                    dissimilarity,
+                    entropy,
+                    angular_second_moment,
+                    sum_average,
+                    sum_variance,
+                    sum_entropy,
+                    sum_of_squares,
+                    inverse_difference_moment,
+                    difference_average,
+                    difference_variance,
+                    information_measure_of_correlation_1,
+                    information_measure_of_correlation_2,
+                } = glcm_features(&glcm);
                 let correlation = Vec::<f32>::from(correlation);
                 let contrast = Vec::<f32>::from(contrast);
                 let dissimilarity = Vec::<f32>::from(dissimilarity);
@@ -67,7 +95,10 @@ impl FeatureSet for GlcmFeatureSet {
                     entropy,
                 ));
                 features.push((
-                    format!("angular_second_moment_{}_{}_{gray_level_count}", offset.0, offset.1),
+                    format!(
+                        "angular_second_moment_{}_{}_{gray_level_count}",
+                        offset.0, offset.1
+                    ),
                     angular_second_moment,
                 ));
                 features.push((
@@ -83,7 +114,10 @@ impl FeatureSet for GlcmFeatureSet {
                     sum_entropy,
                 ));
                 features.push((
-                    format!("sum_of_squares_{}_{}_{gray_level_count}", offset.0, offset.1),
+                    format!(
+                        "sum_of_squares_{}_{}_{gray_level_count}",
+                        offset.0, offset.1
+                    ),
                     sum_of_squares,
                 ));
                 features.push((
@@ -94,11 +128,17 @@ impl FeatureSet for GlcmFeatureSet {
                     inverse_difference_moment,
                 ));
                 features.push((
-                    format!("difference_average_{}_{}_{gray_level_count}", offset.0, offset.1),
+                    format!(
+                        "difference_average_{}_{}_{gray_level_count}",
+                        offset.0, offset.1
+                    ),
                     difference_average,
                 ));
                 features.push((
-                    format!("difference_variance_{}_{}_{gray_level_count}", offset.0, offset.1),
+                    format!(
+                        "difference_variance_{}_{}_{gray_level_count}",
+                        offset.0, offset.1
+                    ),
                     difference_variance,
                 ));
                 features.push((
@@ -115,7 +155,6 @@ impl FeatureSet for GlcmFeatureSet {
                     ),
                     information_measure_correlation2,
                 ));
-
             }
         }
 
@@ -155,106 +194,109 @@ impl FeatureSet for GLRLMFeatureSet {
                 .to_kind(Kind::Float);
 
             let pixel_count = masks.sum_dims([-3, -2, -1]);
-            let GlrlmFeatures { run_percentage, run_length_mean, run_length_variance, gray_level_non_uniformity, run_length_non_uniformity, short_run_emphasis, long_run_emphasis, low_gray_level_run_emphasis, high_gray_level_run_emphasis, short_run_low_gray_level_emphasis, short_run_high_gray_level_emphasis, long_run_low_gray_level_emphasis, long_run_high_gray_level_emphasis, short_run_mid_gray_level_emphasis, long_run_mid_gray_level_emphasis, short_run_extreme_gray_level_emphasis, long_run_extreme_gray_level_emphasis } = glrlm_features(&glrlm, Some(&pixel_count));
+            let GlrlmFeatures {
+                run_percentage,
+                run_length_mean,
+                run_length_variance,
+                gray_level_non_uniformity,
+                run_length_non_uniformity,
+                short_run_emphasis,
+                long_run_emphasis,
+                low_gray_level_run_emphasis,
+                high_gray_level_run_emphasis,
+                short_run_low_gray_level_emphasis,
+                short_run_high_gray_level_emphasis,
+                long_run_low_gray_level_emphasis,
+                long_run_high_gray_level_emphasis,
+                short_run_mid_gray_level_emphasis,
+                long_run_mid_gray_level_emphasis,
+                short_run_extreme_gray_level_emphasis,
+                long_run_extreme_gray_level_emphasis,
+            } = glrlm_features(&glrlm, Some(&pixel_count));
 
+            let short_run_emphasis: Vec<f32> = short_run_emphasis.into();
+            let long_run_emphasis: Vec<f32> = long_run_emphasis.into();
+            let gray_level_non_uniformity: Vec<f32> = gray_level_non_uniformity.into();
+            let run_length_non_uniformity: Vec<f32> = run_length_non_uniformity.into();
+            let low_gray_level_run_emphasis: Vec<f32> = low_gray_level_run_emphasis.into();
+            let high_gray_level_run_emphasis: Vec<f32> = high_gray_level_run_emphasis.into();
+            let short_run_low_gray_level_emphasis: Vec<f32> =
+                short_run_low_gray_level_emphasis.into();
+            let short_run_high_gray_level_emphasis: Vec<f32> =
+                short_run_high_gray_level_emphasis.into();
+            let long_run_low_gray_level_emphasis: Vec<f32> =
+                long_run_low_gray_level_emphasis.into();
+            let long_run_high_gray_level_emphasis: Vec<f32> =
+                long_run_high_gray_level_emphasis.into();
+            let short_run_mid_gray_level_emphasis: Vec<f32> =
+                short_run_mid_gray_level_emphasis.into();
+            let long_run_mid_gray_level_emphasis: Vec<f32> =
+                long_run_mid_gray_level_emphasis.into();
+            let short_run_extreme_gray_level_emphasis: Vec<f32> =
+                short_run_extreme_gray_level_emphasis.into();
+            let long_run_extreme_gray_level_emphasis: Vec<f32> =
+                long_run_extreme_gray_level_emphasis.into();
+            let run_percentage: Vec<f32> = run_percentage.into();
+            let run_length_mean: Vec<f32> = run_length_mean.into();
+            let run_length_variance: Vec<f32> = run_length_variance.into();
+
+            let (dx, dy) = direction;
             vec![
+                Series::new(&format!("short_run_emphasis_{dx}_{dy}"), short_run_emphasis),
+                Series::new(&format!("long_run_emphasis_{dx}_{dy}"), long_run_emphasis),
                 Series::new(
-                    &format!("short_run_emphasis_{}_{}", direction.0, direction.1),
-                    Vec::<f32>::from(short_run_emphasis),
+                    &format!("gray_level_nonuniformity_{dx}_{dy}"),
+                    gray_level_non_uniformity,
                 ),
                 Series::new(
-                    &format!("long_run_emphasis_{}_{}", direction.0, direction.1),
-                    Vec::<f32>::from(long_run_emphasis),
+                    &format!("run_length_nonuniformity_{dx}_{dy}"),
+                    run_length_non_uniformity,
                 ),
                 Series::new(
-                    &format!("gray_level_nonuniformity_{}_{}", direction.0, direction.1),
-                    Vec::<f32>::from(gray_level_non_uniformity),
+                    &format!("low_gray_level_run_emphasis_{dx}_{dy}"),
+                    low_gray_level_run_emphasis,
                 ),
                 Series::new(
-                    &format!("run_length_nonuniformity_{}_{}", direction.0, direction.1),
-                    Vec::<f32>::from(run_length_non_uniformity),
+                    &format!("high_gray_level_run_emphasis_{dx}_{dy}"),
+                    high_gray_level_run_emphasis,
                 ),
                 Series::new(
-                    &format!(
-                        "low_gray_level_run_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(low_gray_level_run_emphasis),
+                    &format!("short_run_low_gray_level_emphasis_{dx}_{dy}"),
+                    short_run_low_gray_level_emphasis,
                 ),
                 Series::new(
-                    &format!(
-                        "high_gray_level_run_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(high_gray_level_run_emphasis),
+                    &format!("short_run_high_gray_level_emphasis_{dx}_{dy}"),
+                    short_run_high_gray_level_emphasis,
                 ),
                 Series::new(
-                    &format!(
-                        "short_run_low_gray_level_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(short_run_low_gray_level_emphasis),
+                    &format!("long_run_low_gray_level_emphasis_{dx}_{dy}"),
+                    long_run_low_gray_level_emphasis,
                 ),
                 Series::new(
-                    &format!(
-                        "short_run_high_gray_level_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(short_run_high_gray_level_emphasis),
+                    &format!("long_run_high_gray_level_emphasis_{dx}_{dy}"),
+                    long_run_high_gray_level_emphasis,
                 ),
                 Series::new(
-                    &format!(
-                        "long_run_low_gray_level_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(long_run_low_gray_level_emphasis),
+                    &format!("short_run_mid_gray_level_emphasis_{dx}_{dy}"),
+                    short_run_mid_gray_level_emphasis,
                 ),
                 Series::new(
-                    &format!(
-                        "long_run_high_gray_level_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(long_run_high_gray_level_emphasis),
+                    &format!("long_run_mid_gray_level_emphasis_{dx}_{dy}"),
+                    long_run_mid_gray_level_emphasis,
                 ),
                 Series::new(
-                    &format!(
-                        "short_run_mid_gray_level_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(short_run_mid_gray_level_emphasis),
+                    &format!("short_run_extreme_gray_level_emphasis_{dx}_{dy}"),
+                    short_run_extreme_gray_level_emphasis,
                 ),
                 Series::new(
-                    &format!(
-                        "long_run_mid_gray_level_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(long_run_mid_gray_level_emphasis),
+                    &format!("long_run_extreme_gray_level_emphasis_{dx}_{dy}"),
+                    long_run_extreme_gray_level_emphasis,
                 ),
+                Series::new(&format!("run_percentage_{dx}_{dy}"), run_percentage),
+                Series::new(&format!("run_length_mean_{dx}_{dy}"), run_length_mean),
                 Series::new(
-                    &format!(
-                        "short_run_extreme_gray_level_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(short_run_extreme_gray_level_emphasis),
-                ),
-                Series::new(
-                    &format!(
-                        "long_run_extreme_gray_level_emphasis_{}_{}",
-                        direction.0, direction.1
-                    ),
-                    Vec::<f32>::from(long_run_extreme_gray_level_emphasis),
-                ),
-                Series::new(
-                    &format!("run_percentage_{}_{}", direction.0, direction.1),
-                    Vec::<f32>::from(run_percentage),
-                ),
-                Series::new(
-                    &format!("run_length_mean_{}_{}", direction.0, direction.1),
-                    Vec::<f32>::from(run_length_mean),
-                ),
-                Series::new(
-                    &format!("run_length_variance_{}_{}", direction.0, direction.1),
-                    Vec::<f32>::from(run_length_variance),
+                    &format!("run_length_variance_{dx}_{dy}"),
+                    run_length_variance,
                 ),
             ]
         });

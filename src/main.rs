@@ -26,7 +26,9 @@ fn load_input_image() -> InputImage {
             tch::vision::image::load(&ARGS.slide).unwrap(),
         ))),
         _ => {
-            error!("Unsupported input format. Please use one of the following : svs, png, jpg, jpeg");
+            error!(
+                "Unsupported input format. Please use one of the following : svs, png, jpg, jpeg"
+            );
             exit(1);
         }
     }
